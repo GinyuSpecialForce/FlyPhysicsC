@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Fly Physics C — a virtual fly brain that solves AP Physics</title>
+    <meta name="description" content="A fly-brain-inspired neural network that learned AP Physics C, visualized in 3D: watch it think." />
+    <link rel="stylesheet" href="/src/ui/styles.css" />
+  </head>
+  <body>
+    <div id="boot" class="boot-overlay">
+      <div class="boot-card">
+        <div class="boot-title">Fly Physics C</div>
+        <div id="bootMsg">Waking the mushroom bodies…</div>
+        <div class="boot-bar"><div id="bootBar"></div></div>
+      </div>
+    </div>
+
+    <nav id="nav">
+      <div class="brand"><strong>Fly Physics C</strong></div>
+      <button data-view="desk" class="active">Desk</button>
+      <button data-view="atlas">Brain Atlas</button>
+      <button data-view="train">Training</button>
+      <button data-view="lesion">Lesion Lab</button>
+      <button data-view="science">The Science</button>
+      <div class="nav-spacer"></div>
+      <button id="perfToggle" title="Disable bloom & reduce resolution for weak GPUs">Low power</button>
+    </nav>
+
+    <!-- Desk view: 3D scene + HUD -->
+    <main id="view-desk" class="view active">
+      <div id="sceneMount"></div>
+      <div class="cam-controls">
+        <button data-cam="desk">Desk cam</button>
+        <button data-cam="brain">Brain cam</button>
+        <button data-cam="auto" class="active">Auto director</button>
+        <button data-cam="orbit" title="Drag to look around · scroll to zoom">Free orbit</button>
+      </div>
+      <div id="hud">
+        <div class="panel" id="problemPanel">
+          <div class="panel-head">
+            <span>Problem <span id="probNum"></span></span>
+            <span class="badge" id="scoreBadge">0 / 0</span>
+          </div>
+          <div id="problemText"></div>
+          <div id="choices"></div>
+          <div id="verdict"></div>
+          <div id="feedbackRow" class="hidden">
+            <span class="feedback-q">Was the fly right?</span>
+            <button id="fbRight" class="primary">Right</button>
+            <button id="fbWrong">Wrong</button>
+            <div id="fbTeach" class="hidden">
+              <select id="fbTopic" aria-label="What the problem was really about"></select>
+              <button id="fbTeachBtn" class="primary">Teach the fly</button>
+            </div>
+            <div id="fbStatus"></div>
+          </div>
+          <div id="freeformBox" class="hidden">
+            <textarea id="freeformInput" rows="3" placeholder="Type any AP Physics C question — e.g. A 3 kg ball moves at 8 m/s. What is its kinetic energy?" spellcheck="false"></textarea>
+            <div class="freeform-row">
+              <button id="solveBtn" class="primary">Give it to the fly</button>
+              <button id="backToSet" class="secondary">Back to problem set</button>
+            </div>
+            <div id="freeformExamples"></div>
+          </div>
+          <div class="desk-row">
+            <label class="inline">Lesion
+              <select id="deskLesion">
+                <option value="none">Intact brain</option>
+                <option value="optic-lobe">Optic lobe removed</option>
+                <option value="mushroom-bodies">Mushroom bodies removed</option>
+                <option value="central-complex">Central complex scrambled</option>
+                <option value="motor">Motor circuits removed</option>
+              </select>
+            </label>
+            <button id="nextProblem" title="Give the fly a practice problem from the set (N)">Practice problem</button>
+            <button id="askFly">Ask the fly</button>
+          </div>
+        </div>
+        <div class="panel" id="timelinePanel">
+          <div class="panel-head">
+            <span>Thought timeline</span>
+            <span class="badge" id="stageBadge"></span>
+          </div>
+          <div id="timeline"></div>
+          <div id="stageDetail"></div>
+        </div>
+      </div>
+    </main>
+
+    <!-- Brain atlas: anatomical, orbit-able view of the fly CNS -->
+    <main id="view-atlas" class="view">
+      <div id="atlasWrap">
+        <canvas id="atlasCanvas"></canvas>
+        <div class="atlas-panel">
+          <div class="panel-head"><span>Brain atlas</span></div>
+          <p class="muted small">Drag to orbit · scroll to zoom · click a neuropil.</p>
+          <div id="atlasInfo"><em>Click a region to inspect it.</em></div>
+          <div id="atlasLegend"></div>
+          <p class="muted small atlas-note">Schematic of the adult <em>Drosophila</em> CNS. The pipeline stages light up live while the fly works at its desk.</p>
+        </div>
+      </div>
+    </main>
+
+    <!-- Training playground -->
+    <main id="view-train" class="view">
+      <section class="page">
+        <h1>Training playground</h1>
+        <p class="muted">
+          Train the fly's mushroom bodies right here. Seeded & deterministic —
+          the same seed always grows the same brain. The network classifies each
+          problem into one of 12 topic families; symbolic motor circuits do the math.
+        </p>
+        <div class="train-controls">
+          <label>Seed <input id="seedInput" type="number" value="1337" /></label>
+          <label>Epochs <input id="epochInput" type="number" value="6" min="1" max="40" /></label>
+          <label>Samples/epoch <input id="samplesInput" type="number" value="600" min="60" max="5000" step="60" /></label>
+          <button id="trainBtn" class="primary">Train</button>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><span>Accuracy &amp; loss per epoch</span><span class="badge" id="finalAcc"></span></div>
+          <canvas id="accChart" width="880" height="220"></canvas>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><span>Confusion — predicted vs actual (eval bank)</span></div>
+          <div id="confusion"></div>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><span>Log</span></div>
+          <div id="trainLog" class="log"></div>
+        </div>
+      </section>
+    </main>
+
+    <!-- Lesion lab -->
+    <main id="view-lesion" class="view">
+      <section class="page">
+        <h1>Lesion lab</h1>
+        <p class="muted">
+          Knock out a brain region and watch accuracy collapse — in the chart below
+          <em>and</em> live on the desk in 3D (the lesion applies to the fly immediately).
+        </p>
+        <div id="lesionResults" class="lesion-grid"></div>
+        <div class="panel">
+          <div class="panel-head"><span>Per-topic breakdown of the selected lesion</span></div>
+          <div id="lesionTopics"></div>
+        </div>
+      </section>
+    </main>
+
+    <!-- Science page -->
+    <main id="view-science" class="view">
+      <section class="page" id="scienceContent"></section>
+    </main>
+
+    <footer id="footer">
+      Built as a neuromorphic homage — real fly anatomy, honest hybrid AI.
+    </footer>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
