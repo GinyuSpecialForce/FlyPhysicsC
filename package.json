@@ -10,11 +10,13 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "ocr:assets": "node scripts/fetch-ocr-assets.mjs"
   },
   "dependencies": {
     "hack-font": "^3.3.0",
     "postprocessing": "^6.36.4",
+    "tesseract.js": "^7.0.0",
     "three": "^0.180.0"
   },
   "devDependencies": {
