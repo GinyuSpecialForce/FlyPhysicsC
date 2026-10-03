@@ -1,0 +1,11 @@
+{
+  "files": [
+    "worker.min.js",
+    "core/tesseract-core-simd-lstm.wasm.js",
+    "core/tesseract-core-simd-lstm.wasm",
+    "lang/eng.traineddata"
+  ],
+  "lang": "local",
+  "gzip": false,
+  "core": "tesseract-core-simd-lstm.wasm.js"
+}
