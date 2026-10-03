@@ -22,6 +22,7 @@
       <button data-view="atlas">Brain Atlas</button>
       <button data-view="train">Training</button>
       <button data-view="lesion">Lesion Lab</button>
+      <button data-view="reference">Reference</button>
       <button data-view="science">The Science</button>
       <div class="nav-spacer"></div>
       <button id="perfToggle" title="Disable bloom & reduce resolution for weak GPUs">Low power</button>
@@ -56,11 +57,15 @@
             <div id="fbStatus"></div>
           </div>
           <div id="freeformBox" class="hidden">
-            <textarea id="freeformInput" rows="3" placeholder="Type any AP Physics C question — e.g. A 3 kg ball moves at 8 m/s. What is its kinetic energy?" spellcheck="false"></textarea>
+            <textarea id="freeformInput" rows="3" placeholder="Type any AP Physics C question — e.g. A 3 kg ball moves at 8 m/s. What is its kinetic energy? You can also paste a screenshot of the problem." spellcheck="false"></textarea>
             <div class="freeform-row">
               <button id="solveBtn" class="primary">Give it to the fly</button>
+              <button id="ocrPick" class="secondary" title="Or paste a screenshot straight into the box">Screenshot or photo</button>
+              <input id="ocrFile" type="file" accept="image/*" hidden />
               <button id="backToSet" class="secondary">Back to problem set</button>
             </div>
+            <div id="ocrStatus" class="ocr-status hidden"></div>
+            <div id="ocrCard" class="ocr-card hidden"></div>
             <div id="freeformExamples"></div>
           </div>
           <div class="desk-row">
@@ -75,6 +80,7 @@
             </label>
             <button id="nextProblem" title="Give the fly a practice problem from the set (N)">Practice problem</button>
             <button id="askFly">Ask the fly</button>
+            <button id="showWork" class="hidden" disabled title="Reveal everything the fly did to solve this problem (W)">Show the fly's work</button>
           </div>
         </div>
         <div class="panel" id="timelinePanel">
@@ -84,6 +90,17 @@
           </div>
           <div id="timeline"></div>
           <div id="stageDetail"></div>
+        </div>
+      </div>
+
+      <!-- the fly's work: the full trace, revealed once it has an answer -->
+      <div id="workOverlay" class="hidden">
+        <div class="panel work-sheet" role="dialog" aria-modal="true" aria-labelledby="workTitle">
+          <div class="panel-head">
+            <span id="workTitle">The fly's work</span>
+            <button id="workClose" title="Close (Esc)">Close</button>
+          </div>
+          <div id="workBody"></div>
         </div>
       </div>
     </main>
@@ -146,6 +163,11 @@
           <div id="lesionTopics"></div>
         </div>
       </section>
+    </main>
+
+    <!-- Reference: the equation sheet and the constants table -->
+    <main id="view-reference" class="view">
+      <section class="page" id="referenceContent"></section>
     </main>
 
     <!-- Science page -->
