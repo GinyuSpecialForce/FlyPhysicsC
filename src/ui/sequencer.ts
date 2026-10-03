@@ -50,6 +50,17 @@ export interface SequencerCallbacks {
   setScore(correct: number, total: number): void;
   /** Brain pulse strength 0..1 (answer flash). */
   setBrainBeat(p: number): void;
+  /**
+   * A show began (record) or was cleared (null): whatever work was on screen
+   * now belongs to a problem the fly is no longer working on.
+   */
+  onShowStart(record: ThoughtRecord | null): void;
+  /**
+   * The fly reached its answer, so the work is finished. This is the moment
+   * the answer appears on screen — not when the show later rests — so pausing
+   * during the answer still leaves the work readable.
+   */
+  onAnswered(): void;
 }
 
 export class Sequencer {
@@ -74,6 +85,7 @@ export class Sequencer {
     this.stageTime = 0;
     this.rested = false;
     this.paused = false; // a pause inspects the current problem only
+    this.cb.onShowStart(record);
     this.cb.setStageBadge("Reading");
     this.cb.showStageDetail("reading");
     this.cb.setFlyState("reading");
@@ -115,6 +127,7 @@ export class Sequencer {
     this.stageTime = 0;
     this.rested = false;
     this.paused = false;
+    this.cb.onShowStart(null);
   }
 
   private enterStage(idx: number): void {
@@ -153,6 +166,8 @@ export class Sequencer {
       this.cb.showVerdict(s.summary, happy);
       this.cb.setFlyState(happy ? "celebrate" : "slump");
       this.cb.setBrainBeat(0.001);
+      // the fly has an answer — its work is finished and can now be shown
+      this.cb.onAnswered();
     }
   }
 }

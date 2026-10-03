@@ -3,12 +3,21 @@
  * (mushroom bodies), routing picks a circuit (central complex), the circuit
  * computes (motor systems). Every step records a trace for the 3D scene.
  */
-import { tokenize } from "./tokenizer";
+import { tokenize, familyForUnit } from "./tokenizer";
 import { buildFeatureVector, TOPIC_LIST } from "./features";
 import { blendPriors, keywordPriors } from "./priors";
 import type { Topic } from "./features";
 import { Network } from "./network";
 import { topicModule } from "./topics/index";
+import type { SolveResult } from "./topics/index";
+import { constantAnswer } from "./constant-answers";
+import { suppliedConstants } from "./constant-table";
+import { citeEquation, equationForConcept, rescueSolve } from "./dimension-solver";
+import type { Citation, RescueResult } from "./dimension-solver";
+import { canonical, materialize, parseChoiceExpression, symbolsOf } from "./symbolic";
+import type { Sym } from "./symbolic";
+import { tokenizeVars } from "./tokenizer";
+import type { UnitFamily } from "./units";
 import { STAGES } from "./stages";
 import { fmt, parseChoiceNumber } from "./format";
 import type { Problem, ThoughtRecord, StageTrace } from "./types";
@@ -22,6 +31,8 @@ export class FlyBrain {
   lesionRng: Rng | null;
   /** Human feedback: phrasings the user taught, shared across desk brains. */
   feedback: FeedbackMemory;
+  /** How the latest freeform text arrived — set when a picture was read. */
+  private lastSource: ThoughtRecord["source"] = undefined;
   /** Most recent freeform answer — solve(FREEFORM_PROBLEM) re-returns it. */
   private lastRecord: ThoughtRecord | null = null;
 
@@ -56,9 +67,17 @@ export class FlyBrain {
    * Run the full pipeline on a free-form question with no answer key: the
    * fly classifies it, routes, computes, and states its answer. Persists
    * until the next freeform question so re-rendering the desk is idempotent.
+   *
+   * `opts.ocr` additionally repairs the letter/digit confusions an OCR engine
+   * makes in a photographed problem.
    */
-  solveFreeform(text: string): ThoughtRecord {
-    this.lastRecord = this.run(buildFreeformProblem(text));
+  solveFreeform(
+    text: string,
+    opts: { ocr?: boolean; source?: ThoughtRecord["source"] } = {},
+  ): ThoughtRecord {
+    this.lastSource = opts.source;
+    this.lastRecord = this.run(buildFreeformProblem(text, opts));
+    if (this.lastSource) this.lastRecord.source = this.lastSource;
     return this.lastRecord;
   }
 
@@ -189,6 +208,9 @@ export class FlyBrain {
     // ── Stage 4: compute (motor circuit, with bind-check reroute) ────
     const ctx = { slots, keywordHits, text: problem.text };
     const routedTopic = circuitTopic;
+    // A question about a table value ("what is g on Mars?") is a lookup, not a
+    // derivation — the constants table answers it before any circuit runs.
+    const cAnswer = constantAnswer(problem.text);
     // If the routed circuit uses none of the slot families the problem
     // actually contains, it cannot bind anything — reroute to the
     // highest-ranked circuit that CAN. A computed zero is a legitimate
@@ -196,7 +218,7 @@ export class FlyBrain {
     const present = new Set(slots.map((s) => s.unit));
     const canBind = (topic: Topic): boolean =>
       (TOPIC_FAMILIES[topic] ?? []).some((f) => present.has(f));
-    if (!canBind(circuitTopic)) {
+    if (!cAnswer && !canBind(circuitTopic)) {
       for (const [topic] of ranked(probs)) {
         if (topic === routedTopic || !canBind(topic)) continue;
         circuitTopic = topic;
@@ -204,7 +226,9 @@ export class FlyBrain {
       }
     }
     const mod = topicModule(circuitTopic);
-    let result = mod.solve(ctx);
+    let result: SolveResult = cAnswer
+      ? { value: cAnswer.value, unit: cAnswer.unit }
+      : mod.solve(ctx);
     // answer-family check: if the question asks for a KIND of quantity this
     // circuit can't produce (wrong unit — volts for an amps question), try
     // the next-ranked circuits that can. A number in the wrong family is a
@@ -225,7 +249,7 @@ export class FlyBrain {
       : wanted
         ? !ok(result)
         : result.concept === undefined && !Number.isFinite(result.value);
-    if (!lesioned && failed) {
+    if (!cAnswer && !lesioned && failed) {
       // with no quantities at all, every circuit is equally able to "bind"
       const alts = ranked(probs)
         .filter(([topic]) => topic !== circuitTopic && (present.size === 0 || canBind(topic)))
@@ -244,10 +268,100 @@ export class FlyBrain {
         result = pick.r;
       }
     }
-    const answerIndex =
+
+    // ── last resort: search the equation sheet dimensionally ─────────
+    // Nothing hand-written bound this phrasing, so look for a sheet entry
+    // whose variables all bind and whose answer is the kind the question
+    // wants. It runs only after both second chances above, so it can never
+    // override a working circuit — and it is free to decline.
+    let rescued: RescueResult | undefined;
+    const vars = tokenizeVars(problem.text);
+    const wantSymbolic = wantsSymbolicQuestion(problem.text);
+    const rescueOpts = {
+      slots,
+      text: problem.text,
+      wanted: wanted?.map((u) => familyForUnit(u)).filter((f): f is UnitFamily => !!f),
+      rankedTopics: ranked(probs).map(([t]) => t),
+      circuitTopic,
+      vars,
+      wantSymbolic,
+    };
+    if (!cAnswer && result.concept === undefined && !Number.isFinite(result.value)) {
+      const rescue = rescueSolve(rescueOpts);
+      if (rescue) {
+        rescued = rescue;
+        result = { value: rescue.value, unit: rescue.unit };
+      }
+    }
+    // "in terms of m and v" wants the EXPRESSION, so a circuit that happily
+    // computed a number has not really answered the question — go back to the
+    // sheet with symbols in play. The number is still reported alongside it.
+    if (!cAnswer && wantSymbolic && result.concept === undefined && rescued?.symbolic === undefined) {
+      const symbolicRescue = rescueSolve({ ...rescueOpts, wantSymbolic: true });
+      if (symbolicRescue?.symbolic) {
+        rescued ??= symbolicRescue;
+        if (!Number.isFinite(result.value) && Number.isFinite(symbolicRescue.value)) {
+          result = { value: symbolicRescue.value, unit: symbolicRescue.unit };
+        }
+      }
+    }
+    const symbolicAnswer = rescued?.symbolic;
+    // "which equation do I use for …?" — the sheet answers about itself
+    let conceptCitation: Citation | undefined;
+    if (!cAnswer && rescued === undefined && result.concept === undefined && !Number.isFinite(result.value)) {
+      conceptCitation = equationForConcept(problem.text, circuitTopic);
+      if (conceptCitation) result = { value: NaN, unit: "concept", concept: conceptCitation.display };
+    }
+    const numericPick =
       result.concept !== undefined
         ? matchConcept(problem.choices, result.concept)
         : pickChoice(problem.choices, result.value, result.unit, result.displayScale, result.displaySuffix);
+    // an option written "mv²/r" holds no number to match against, so fall back
+    // to comparing the two expressions themselves
+    const answerIndex =
+      numericPick < 0 && symbolicAnswer
+        ? pickSymbolicChoice(problem.choices, symbolicAnswer.sym)
+        : numericPick;
+
+    // what the fly actually used: the equation from the sheet, and the
+    // constants it looked up because the problem implied them
+    const cite: Citation | undefined = rescued
+      ? { display: rescued.display, section: rescued.section, equationId: rescued.equationId }
+      : result.concept !== undefined
+        ? conceptCitation
+        : citeEquation(slots, familyForUnit(result.unit) ?? "", circuitTopic);
+    const cited = suppliedConstants(problem.text);
+    const computeDetails: string[] = [
+      cAnswer
+        ? `Read off the constants table: ${cAnswer.primary.display} — ${cAnswer.how}`
+        : circuitTopic !== routedTopic
+          ? `Rerouted: the ${routedTopic} circuit couldn't bind this phrasing — the ${circuitTopic} circuit could`
+          : `Bound slots to the standard ${circuitTopic} equation`,
+      result.concept !== undefined
+        ? `Conceptual answer: ${result.concept}`
+        : `Computed ${fmt(result.value / (result.displayScale ?? 1))} ${result.unit}${result.displaySuffix ? ` ${result.displaySuffix}` : ""}`,
+    ];
+    if (rescued) {
+      computeDetails.unshift(
+        `No circuit covered this — solved dimensionally from ${rescued.section}: ${rescued.display}`,
+      );
+      const sub = Object.entries(rescued.bindings)
+        .map(([k, v]) => `${k} = ${fmt(v)}`)
+        .join(", ");
+      if (sub) computeDetails.push(`Substituted ${sub}`);
+      if (rescued.runnersUp.length) {
+        computeDetails.push(`Also considered ${rescued.runnersUp.join(" · ")}`);
+      }
+    }
+    if (cite) computeDetails.push(`Equation sheet: ${cite.display} · ${cite.section}`);
+    if (cited.length) {
+      computeDetails.push(
+        `Constants used: ${cited.slice(0, 3).map((c) => c.constant.display).join(", ")}`,
+      );
+    }
+    computeDetails.push(
+      answerIndex >= 0 ? `Matched to choice "${problem.choices[answerIndex].text}"` : "No choice matched the computed value",
+    );
 
     traces.push({
       id: "compute",
@@ -257,15 +371,7 @@ export class FlyBrain {
         result.concept !== undefined
           ? `${circuitTopic} circuit → concept: ${result.concept}`
           : `${circuitTopic} circuit → ${fmt(result.value)} ${result.unit}`,
-      details: [
-        circuitTopic !== routedTopic
-          ? `Rerouted: the ${routedTopic} circuit couldn't bind this phrasing — the ${circuitTopic} circuit could`
-          : `Bound slots to the standard ${circuitTopic} equation`,
-        result.concept !== undefined ? `Conceptual answer: ${result.concept}` : `Computed ${fmt(result.value)} ${result.unit}`,
-        answerIndex >= 0
-          ? `Matched to choice "${problem.choices[answerIndex].text}"`
-          : "No choice matched the computed value",
-      ],
+      details: computeDetails,
       activation: 0.8,
     });
 
@@ -275,26 +381,46 @@ export class FlyBrain {
     // freeform has no choices, so answerIndex is meaningless there — the fly
     // "answered" iff its circuit produced a value (circuits return NaN when
     // they couldn't compute; a computed 0 is a legitimate answer) or a
-    // concept phrase
-    const solved = result.concept !== undefined || Number.isFinite(result.value);
+    // concept phrase — or it produced an expression in the problem's variables
+    const numericText = Number.isFinite(result.value)
+      ? `${fmt(result.value / (result.displayScale ?? 1))} ${result.unit}${result.displaySuffix ? ` ${result.displaySuffix}` : ""}`
+      : undefined;
+    const solved = result.concept !== undefined || numericText !== undefined || symbolicAnswer !== undefined;
     const computedAnswer: string | null = solved
       ? result.concept !== undefined
         ? result.concept
-        : `${fmt(result.value / (result.displayScale ?? 1))} ${result.unit}${result.displaySuffix ? ` ${result.displaySuffix}` : ""}`
+        : symbolicAnswer && numericText === undefined
+          ? symbolicAnswer.expression
+          : numericText!
       : null;
+    // both ways at once when the symbols happen to be known: "mv²/r — 10.7 N"
+    const bothWays =
+      symbolicAnswer && numericText ? `${symbolicAnswer.expression} — ${numericText} for the given values` : undefined;
     traces.push({
       id: "answer",
       label: STAGES[4].label,
       region: STAGES[4].region,
       summary: freeform
         ? solved
-          ? `Answer: ${computedAnswer}`
+          ? `Answer: ${bothWays ?? computedAnswer}`
           : "The fly couldn't quite solve this one"
         : correct
           ? `Choice ${letter(answerIndex)} — correct`
           : `Choice ${answerIndex >= 0 ? letter(answerIndex) : "—"} — expected ${letter(problem.answer)}`,
       details: freeform
-        ? [solved ? "Penciled onto the paper — no answer key to grade against" : "No circuit produced a value for this phrasing"]
+        ? [
+            solved
+              ? "Penciled onto the paper — no answer key to grade against"
+              : "No circuit produced a value for this phrasing",
+            ...(symbolicAnswer
+              ? [
+                  `Answered in terms of ${symbolicAnswer.variables.join(", ")}`,
+                  ...(symbolicAnswer.value === undefined
+                    ? []
+                    : [`Those symbols are known here, so it also comes to ${fmt(symbolicAnswer.value)} ${result.unit}`]),
+                ]
+              : []),
+          ]
         : correct
           ? ["Wing buzz + happy leg wiggle"]
           : ["Slump. Antennae droop. Next problem."],
@@ -318,6 +444,7 @@ export class FlyBrain {
       answerIndex,
       correct,
       computedAnswer,
+      computedSymbolic: symbolicAnswer?.expression ?? null,
       stages: traces,
     };
   }
@@ -377,6 +504,10 @@ const WANTED_UNITS: Array<[RegExp, string[]]> = [
   // speed") claim the answer before the acceleration/speed rules can — a
   // mention of radius alone ("speed … with radius 50 m") never matches
   [
+    /\b(?:what|which|find|determine|calculate|its|their|the|its own)\s+(?:orbital\s+)?radius\b/,
+    ["m"],
+  ],
+  [
     /radius (?:at which|of the (?:turn|circle|orbit|station))|(?:minimum|maximum|tightest|smallest|what|which|find|determine|calculate)(?:\s+\w+){0,3}\s+radius\b/,
     ["m"],
   ],
@@ -392,7 +523,9 @@ const WANTED_UNITS: Array<[RegExp, string[]]> = [
  * the sentence before it.
  */
 export function finalQuestion(text: string): string {
-  const sentences = text.trim().split(/(?<=[.?])\s+/);
+  // a trailing aside — "(I = MR²)", "(hint: ignore air)" — is not the question
+  const stripped = text.trim().replace(/\s*\([^()]*\)\s*$/, "");
+  const sentences = stripped.split(/(?<=[.?])\s+/);
   const tail = sentences.pop() ?? "";
   const q = tail.split(/\s+/).filter(Boolean).length < 3 && sentences.length ? `${sentences.pop()} ${tail}` : tail;
   return q.toLowerCase();
@@ -470,8 +603,7 @@ function pickChoice(
 }
 
 /** Match a concept answer to the choice containing its phrase. */
-function matchConcept(choices: { text: string }[], concept: string): number {
-  const norm = (s: string) => s.toLowerCase().replace(/\s+/g, " ").trim();
+function matchConcept(choices: { text: string }[], concept: string): number {  const norm = (s: string) => s.toLowerCase().replace(/\s+/g, " ").trim();
   const c = norm(concept);
   let idx = choices.findIndex((ch) => norm(ch.text).includes(c));
   if (idx >= 0) return idx;
@@ -488,6 +620,69 @@ function matchConcept(choices: { text: string }[], concept: string): number {
     if (idx >= 0) return idx;
   }
   return -1;
+}
+
+/** "in terms of m and v", "expressed in terms of …", "as a function of …". */
+const SYMBOLIC_ASK = /\b(?:in|expressed|express)\s+terms\s+of\b|\bas a function of\b/i;
+
+function wantsSymbolicQuestion(text: string): boolean {
+  return SYMBOLIC_ASK.test(text);
+}
+
+/**
+ * Awkward, mutually distinct values for probing. When two expressions look
+ * different but might mean the same thing, the only honest way to find out is
+ * to evaluate both at numbers where an accidental agreement is implausible.
+ */
+const PROBES = [2.31, 5.7, 1.13, 8.29, 3.77, 6.05, 1.91, 4.43, 7.19, 2.87];
+
+/**
+ * Match a symbolic answer to a multiple-choice option that is itself an
+ * expression. Two passes: exact canonical equality (`mv²/r` written five
+ * different ways still matches), then a numeric probe for forms that canonical
+ * treats as different but that agree once you substitute — `1/2 mv²` against
+ * `mv²/2`.
+ *
+ * Deliberately conservative: the probe pass only runs when both sides mention
+ * exactly the same set of variables, so a distractor can never be matched by
+ * luck.
+ */
+function pickSymbolicChoice(choices: { text: string }[], sym: Sym): number {
+  const target = canonical(sym);
+  const targetNames = symbolsOf(sym);
+  if (!targetNames.length) return -1;
+  const lower = (s: string): string => s.toLowerCase();
+  const targetLower = targetNames.map(lower);
+
+  let exact = -1;
+  let best = -1;
+  let bestScore = Infinity;
+  choices.forEach((c, i) => {
+    if (exact >= 0) return;
+    const parsed = parseChoiceExpression(c.text);
+    if (parsed === undefined) return;
+    if (canonical(parsed) === target) {
+      exact = i;
+      return;
+    }
+    const names = symbolsOf(parsed);
+    const namesLower = names.map(lower);
+    if (namesLower.length !== targetLower.length) return;
+    if (!targetLower.every((n) => namesLower.includes(n))) return;
+    const subs: Record<string, number> = {};
+    for (const n of [...targetNames, ...names]) {
+      subs[n] = PROBES[n.charCodeAt(0) % PROBES.length];
+    }
+    const mine = materialize(sym, subs);
+    const theirs = materialize(parsed, subs);
+    if (mine === undefined || theirs === undefined) return;
+    const score = Math.abs(mine - theirs) / Math.max(Math.abs(mine), 1e-12);
+    if (score < bestScore) {
+      bestScore = score;
+      best = i;
+    }
+  });
+  return exact >= 0 ? exact : bestScore < 0.02 ? best : -1;
 }
 
 function scrambleUnit(unit: string): string {

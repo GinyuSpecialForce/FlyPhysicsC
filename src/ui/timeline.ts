@@ -55,7 +55,20 @@ export class Timeline {
   showDetail(id: string): void {
     const detail = byId("stageDetail");
     if (id === "reading") {
-      detail.innerHTML = `<b>Reading.</b> The optic lobe scans the page — tokenizing quantities and keywords.`;
+      const src = this.record?.source;
+      if (!src) {
+        detail.innerHTML = `<b>Reading.</b> The optic lobe scans the page — tokenizing quantities and keywords.`;
+        return;
+      }
+      const pct = Math.round(src.confidence * 100);
+      const flags = src.flags.length
+        ? `<br><span class="muted">Check these numbers: ${esc(src.flags.join(", "))}</span>`
+        : "";
+      const repairs = src.repairs.length ? `<br><span class="muted">Repaired: ${esc(src.repairs.join(", "))}</span>` : "";
+      detail.innerHTML =
+        `<b>Reading a picture.</b> ${esc(src.fileName)} was read at ${pct}% confidence.` +
+        `<br><span class="muted">${esc(src.transcript.slice(0, 400))}${src.transcript.length > 400 ? "…" : ""}</span>` +
+        flags + repairs;
       return;
     }
     const s = this.record?.stages.find((st) => st.id === id);

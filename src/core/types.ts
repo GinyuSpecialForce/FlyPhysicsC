@@ -25,6 +25,20 @@ export interface Problem {
   origin: Origin;
 }
 
+/** Where the text of a user problem came from. */
+export interface ProblemSource {
+  kind: "image";
+  fileName: string;
+  /** mean OCR confidence, 0–1 */
+  confidence: number;
+  /** exactly what the engine read, before normalization */
+  transcript: string;
+  /** low-confidence numbers the human should check */
+  flags: string[];
+  /** which repairs the normalizer made */
+  repairs: string[];
+}
+
 /** The full pipeline result for one problem — the "thought record". */
 export interface ThoughtRecord {
   problem: Problem;
@@ -44,6 +58,10 @@ export interface ThoughtRecord {
   correct: boolean;
   /** free-form answer the fly computed (user problems; null = it couldn't solve it) */
   computedAnswer?: string | null;
+  /** the answer written in the problem's own variables, e.g. "mv²/r" */
+  computedSymbolic?: string | null;
+  /** how the text arrived — set when a picture was read rather than typed */
+  source?: ProblemSource;
   /** per-stage traces for the timeline / 3D sync */
   stages: StageTrace[];
 }

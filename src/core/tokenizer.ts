@@ -40,6 +40,26 @@ function normalizeUnit(u: string): string {
     .replace(/\u00b0/g, "deg"); // °
 }
 
+/**
+ * The unit family of a written unit string — "m/s²" → "velocity", "μC" →
+ * "charge". Used to map a finished answer back to the quantity it is, which is
+ * how the equation-sheet citation finds the right entry.
+ */
+export function familyForUnit(unit: string): string | undefined {
+  const u = normalizeUnit(unit);
+  return UNIT_MAP[u] ?? UNIT_MAP[u.toLowerCase()];
+}
+
+/**
+ * Is this token a written unit rather than a variable? The symbolic answer
+ * matcher needs to tell "10.7 N" (a value and its unit) from "m v²/r" (a
+ * product of variables), or a unit would read as a free symbol.
+ */
+export function isUnitName(token: string): boolean {
+  const u = normalizeUnit(token);
+  return (UNIT_MAP[u] ?? UNIT_MAP[u.toLowerCase()]) !== undefined;
+}
+
 /** Normalized-unit → family. Keys are POST-normalization (no ·, μ→u, ²→2). */
 const UNIT_MAP: Record<string, string> = {
   // length / time / motion
@@ -76,6 +96,9 @@ const UNIT_MAP: Record<string, string> = {
   "Wb": "flux", "Tm2": "flux",
   // misc structured
   "m2": "area", "kgm2": "inertia", "turns": "turns",
+  // answer units a solver may return, so a finished answer can be mapped back
+  // to its family for the equation citation ("μs" → mu-coeff, "suns" → mass)
+  "us": "mu-coeff", "rev/day": "frequency", "suns": "mass",
 };
 
 /** Normalized-unit → multiplier to SI. Applied to the parsed value. */
@@ -156,8 +179,12 @@ const UNITS = [
 
 // (?![a-zA-Z]) is CRITICAL: without it "3 milliamp" parses as "3 m" (length),
 // "0.5 henry" as "0.5 h" (time) — a unit symbol must not match inside a word.
+// The number also accepts ASCII scientific notation ("2.0e6 m/s"), which is how
+// typed and OCR'd text usually writes it; the e must be followed by digits so
+// "2 eV" is still 2 electron-volts.
 const QUANTITY_RE = new RegExp(
-  "(-?\\d+(?:\\.\\d+)?(?:\\s*[×x]\\s*10\\s*\\^?\\s*(?:-?\\d+|[⁻⁰¹²³⁴⁵⁶⁷⁸⁹]+))?)\\s*(" + UNITS + ")(?![a-zA-Z])",
+  "(-?\\d[\\d,]*(?:\\.\\d+)?(?:\\s*[×x]\\s*10\\s*\\^?\\s*(?:-?\\d+|[⁻⁰¹²³⁴⁵⁶⁷⁸⁹]+)|\\s*[eE]\\s*[+-]?\\d+)?)" +
+    "\\s*(" + UNITS + ")(?![a-zA-Z])",
   "g",
 );
 
@@ -170,7 +197,7 @@ function toNumber(numStr: string): number {
     if (!Number.isFinite(mant) || !Number.isFinite(exp)) return NaN;
     return mant * 10 ** exp;
   }
-  return parseFloat(s);
+  return parseFloat(s); // parseFloat reads "2.0e6" as 2,000,000
 }
 
 /** Worded unit phrases → normalized unit, tried around each bare number. */
@@ -379,4 +406,156 @@ function quantitySlots(text: string): Slot[] {
     slots.push({ value, unit: fam, text: m[0].trim() });
   }
   return slots;
+}
+
+// ── named variables ("in terms of m and v") ───────────────────────────
+
+/**
+ * A quantity the problem names symbolically rather than numerically.
+ *
+ * This is deliberately a SEPARATE export from `tokenize()`: the network's
+ * feature vector must stay byte-identical, and a bare letter next to a cue
+ * word ("of mass m") is far too loose a pattern to let anywhere near the
+ * numeric slot extraction.
+ */
+export interface VarBinding {
+  /** the symbol as the problem writes it, subscript digits normalized: "v₀" → "v0" */
+  symbol: string;
+  /** what kind of quantity it is, when the text made that clear */
+  family?: string;
+  /** the value, when the problem also assigned one: "m = 2.0 kg" */
+  value?: number;
+  /** the span of text that declared it */
+  text: string;
+}
+
+const SUBSCRIPT_DIGITS: Record<string, string> = {
+  "₀": "0", "₁": "1", "₂": "2", "₃": "3", "₄": "4",
+  "₅": "5", "₆": "6", "₇": "7", "₈": "8", "₉": "9",
+};
+
+/** One latin or greek letter, optionally carrying a subscript index. */
+const SYMBOL_TOKEN = "[A-Za-z\\u0391-\\u03a9\\u03b1-\\u03c9]\\d?";
+
+/** A cue word says what KIND of quantity the letter after it stands for. */
+const CUE_FAMILY: Array<[string, string]> = [
+  ["mass|weight", "mass"],
+  ["length|distance|width|height|altitude|radius|diameter", "length"],
+  ["speed|velocity", "velocity"],
+  ["acceleration", "acceleration"],
+  ["force|tension|thrust", "force"],
+  ["energy|work", "energy"],
+  ["power", "power"],
+  ["momentum", "momentum"],
+  ["torque", "torque"],
+  ["charge", "charge"],
+  ["current", "current"],
+  ["voltage|emf|potential difference", "voltage"],
+  ["resistance|resistor", "resistance"],
+  ["capacitance|capacitor", "capacitance"],
+  ["inductance|inductor", "inductance"],
+  ["period|duration|flight time|elapsed time", "time"],
+  ["time|interval", "time"],
+  ["angle|inclination|incline", "angle"],
+  ["frequency", "frequency"],
+  ["stiffness|spring constant", "spring-k"],
+  ["electric field|field strength", "field-e"],
+  ["magnetic field|flux density", "field-b"],
+  ["magnetic flux|flux", "flux"],
+];
+
+/** Normalize a written symbol: strip a subscript to its ASCII digit. */
+function normSymbol(sym: string): string {
+  let out = "";
+  for (const ch of sym) {
+    const sub = SUBSCRIPT_DIGITS[ch];
+    if (sub !== undefined) out += sub;
+    else if (ch === "\u03bc" || ch === "\u00b5") out += "u"; // μ/µ
+    else out += ch;
+  }
+  return out;
+}
+
+/**
+ * Tier A — an explicit assignment. "m = 2.0 kg" names both the symbol and its
+ * value, which is the one form that cannot be mistaken for a unit.
+ */
+function assignedVars(text: string): VarBinding[] {
+  const out: VarBinding[] = [];
+  const re = new RegExp(
+    `(?:^|[\\s(])(${SYMBOL_TOKEN})\\s*=\\s*(-?[\\d.,]+(?:\\s*[×x]\\s*10\\s*\\^?\\s*(?:-?\\d+|[⁻⁰¹²³⁴⁵⁶⁷⁸⁹]+))?)\\s*(${UNITS})(?![a-zA-Z])`,
+    "g",
+  );
+  for (const m of text.matchAll(re)) {
+    const value = toNumber(m[2]);
+    if (!Number.isFinite(value)) continue;
+    const unit = normalizeUnit(m[3]);
+    const fam = UNIT_MAP[unit] ?? UNIT_MAP[unit.toLowerCase()];
+    if (!fam) continue;
+    out.push({
+      symbol: normSymbol(m[1]),
+      family: fam,
+      value: value * (CONVERT[unit] ?? CONVERT[unit.toLowerCase()] ?? 1),
+      text: m[0].trim(),
+    });
+  }
+  return out;
+}
+
+/**
+ * Tier B — a cue word immediately before a lone letter: "of mass m",
+ * "spring constant k", "the radius r". The letter must be a free-standing
+ * token, so "3.0 m" (no cue) and "in units of m/s" never produce a symbol.
+ */
+function cuedVars(text: string): VarBinding[] {
+  const out: VarBinding[] = [];
+  for (const [source, family] of CUE_FAMILY) {
+    const re = new RegExp(
+      `\\b(?:${source})\\b(?:\\s+(?:of|for|the|a|an|its|his|her|their|is|equals|at)){0,2}\\s+(${SYMBOL_TOKEN})(?![\\w\\u2080-\\u2089])`,
+      "gi",
+    );
+    for (const m of text.matchAll(re)) {
+      out.push({ symbol: normSymbol(m[1]), family, text: m[0].trim() });
+    }
+  }
+  return out;
+}
+
+/** Words that join a symbol list without ending it: "m, v and r". */
+const LIST_CONNECTORS = new Set(["and", "or"]);
+
+/**
+ * The symbols a question explicitly asks to be answered in terms of:
+ * "in terms of m, v and r". These carry no family of their own — the rescue
+ * matches them to an equation's variables by NAME first, which is both more
+ * reliable and more faithful to what the student asked for.
+ *
+ * Scanning stops at the first real word, so "in terms of m and v, what is the
+ * force?" yields [m, v] and not every initial letter in the rest of the line.
+ */
+export function enumeratedSymbols(text: string): string[] {
+  const tail = text.match(
+    /\b(?:in|expressed|express)\s+terms\s+of\b([\s\S]*?)(?:[.?]|$)/i,
+  );
+  if (!tail) return [];
+  const out: string[] = [];
+  for (const word of tail[1].split(/[^A-Za-zΑ-Ωα-ω\d]+/).filter(Boolean)) {
+    const lower = word.toLowerCase();
+    if (LIST_CONNECTORS.has(lower)) continue;
+    if (!/^[A-Za-zΑ-Ωα-ω]\d?$/.test(word)) break; // prose has started
+    const sym = normSymbol(word);
+    if (!out.includes(sym)) out.push(sym);
+  }
+  return out;
+}
+
+/**
+ * Every symbolic variable the problem declares, most reliable first.
+ * `enumerated` comes from "in terms of …", then assignments, then cue words.
+ */
+export function tokenizeVars(
+  text: string,
+): { declared: VarBinding[]; enumerated: string[] } {
+  const declared = [...assignedVars(text), ...cuedVars(text)];
+  return { declared, enumerated: enumeratedSymbols(text) };
 }

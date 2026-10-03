@@ -17,15 +17,18 @@ import { FeedbackMemory } from "./core/feedback";
 import { Rng } from "./core/rng";
 import { LESIONS, makeBrain } from "./core/lesions";
 import type { LesionType } from "./core/lesions";
-import type { Problem, ThoughtRecord } from "./core/types";
+import type { Problem, ProblemSource, ThoughtRecord } from "./core/types";
 import { FREEFORM_EXAMPLES } from "./core/freeform";
 import { createBrainAtlas, type BrainAtlas } from "./viz/atlas";
-import { byId, select } from "./ui/dom";
+import { byId, describeError, select } from "./ui/dom";
 import { Sequencer } from "./ui/sequencer";
 import { Timeline } from "./ui/timeline";
+import { WorkSheet } from "./ui/workView";
 import { initTrainView } from "./ui/trainView";
 import { initLesionView, refreshLesionEvals } from "./ui/lesionView";
 import { renderScience } from "./ui/scienceView";
+import { renderReference } from "./ui/referenceView";
+import { initOcrView } from "./ui/ocrView";
 
 // ── dom helpers ─────────────────────────────────────────────────
 
@@ -86,6 +89,7 @@ let lastFeedback: { text: string; topic: Topic } | null = null;
 
 let timeline!: Timeline;
 let sequencer!: Sequencer;
+let work!: WorkSheet;
 
 // atlas view state (lazily initialized on first visit)
 let atlas: BrainAtlas | null = null;
@@ -170,23 +174,43 @@ function showWaiting(): void {
 }
 
 // ── freeform: hand the fly any question ─────────────────────────
+/** The source of the last image read, if the last question came from a picture. */
+let lastImageSource: ProblemSource | undefined;
+
 function startFreeform(): void {
   try {
-    const record = deskBrain.solveFreeform((byId("freeformInput") as HTMLTextAreaElement).value);
+    const text = (byId("freeformInput") as HTMLTextAreaElement).value;
+    const record = deskBrain.solveFreeform(text, {
+      ocr: lastImageSource !== undefined,
+      source: lastImageSource,
+    });
     freeformMode = true;
-    byId("probNum").textContent = "(typed)";
+    byId("probNum").textContent = record.problem.choices.length ? "(photo)" : "(typed)";
     byId("problemText").textContent = record.problem.text;
-    byId("choices").innerHTML = "";
+    // a photographed multiple-choice page keeps its options, so the fly can
+    // match its answer against them like a real exam question
+    const choicesEl = byId("choices");
+    choicesEl.innerHTML = "";
+    record.problem.choices.forEach((c, i) => {
+      const div = document.createElement("div");
+      div.className = "choice";
+      div.textContent = `${"ABCDE"[i]})  ${c.text}`;
+      div.id = `choice-${i}`;
+      choicesEl.appendChild(div);
+    });
     const verdict = byId("verdict");
     verdict.textContent = "";
     verdict.className = "";
     timeline.show(record);
     sequencer.start(record);
     scene.setFlyAnswer("");
-    scene.setPaper(record.problem.text, [], []);
+    scene.setPaper(record.problem.text, record.problem.choices.map((c) => c.text), []);
   } catch (err) {
+    // report what actually broke — swallowing it as a shrug is how a real
+    // failure ends up looking like a mystery
+    console.warn("[solve] freeform solve failed", err);
     const v = byId("verdict");
-    v.textContent = err instanceof Error ? err.message : "The fly squints at the page.";
+    v.textContent = describeError(err) || "The fly squints at the page.";
     v.className = "bad";
   }
 }
@@ -200,6 +224,7 @@ function advance(): void {
 
 function showFreeformInput(): void {
   freeformMode = true;
+  lastImageSource = undefined;
   sequencer.setPaused(true); // hold the current show while the user types
   hideFeedback();
   byId("freeformBox").classList.remove("hidden");
@@ -332,6 +357,15 @@ function wireUI(onLesionSelected: (type: LesionType) => void): void {
   byId("backToSet").addEventListener("click", () => exitFreeform());
   byId("solveBtn").addEventListener("click", () => startFreeform());
 
+  // a picture of a problem: the transcript lands in the same textarea, and the
+  // fly solves it once the reading looks right
+  initOcrView({
+    onSolve: (_text, source, confident) => {
+      lastImageSource = source;
+      if (confident) startFreeform();
+    },
+  });
+
   const ffInput = byId("freeformInput") as HTMLTextAreaElement;
   ffInput.addEventListener("keydown", (e) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -346,6 +380,7 @@ function wireUI(onLesionSelected: (type: LesionType) => void): void {
     b.textContent = ex;
     b.addEventListener("click", () => {
       ffInput.value = ex;
+      lastImageSource = undefined;
       startFreeform();
     });
     exBox.appendChild(b);
@@ -393,11 +428,11 @@ function wireUI(onLesionSelected: (type: LesionType) => void): void {
   });
 
   window.addEventListener("keydown", (e) => {
-    if (e.key === "n" || e.key === "N") {
-      const tag = (e.target as HTMLElement | null)?.tagName;
-      if (tag === "TEXTAREA" || tag === "INPUT") return; // user is typing
-      if (byId("view-desk").classList.contains("active")) advance();
-    }
+    const tag = (e.target as HTMLElement | null)?.tagName;
+    if (tag === "TEXTAREA" || tag === "INPUT") return; // user is typing
+    if (!byId("view-desk").classList.contains("active")) return;
+    if (e.key === "n" || e.key === "N") advance();
+    else if (e.key === "w" || e.key === "W") work.toggle();
   });
 }
 
@@ -407,6 +442,7 @@ function startApp(): void {
   director = new CameraDirector();
 
   timeline = new Timeline(() => sequencer.setPaused(true));
+  work = new WorkSheet();
   sequencer = new Sequencer({
     highlightStage: (id) => timeline.highlight(id),
     showStageDetail: (id) => timeline.showDetail(id),
@@ -421,8 +457,10 @@ function startApp(): void {
       if (freeformMode) {
         const rec = deskBrain.freeformRecord;
         if (rec) {
-          scene.setFlyAnswer(rec.computedAnswer ?? "");
-          scene.setPaper(rec.problem.text, [], highlights);
+          // a question that asked for an answer in terms of variables gets the
+          // expression penciled on the paper, not the number
+          scene.setFlyAnswer(rec.computedSymbolic ?? rec.computedAnswer ?? "");
+          scene.setPaper(rec.problem.text, rec.problem.choices.map((c) => c.text), highlights);
           return;
         }
       }
@@ -430,8 +468,16 @@ function startApp(): void {
       scene.setPaper(p.text, p.choices.map((c) => c.text), highlights);
     },
     markChoices: (picked, correct, answer) => {
-      if (picked >= 0) byId(`choice-${picked}`).classList.add(correct ? "correct" : "wrong");
-      if (!correct && answer >= 0) byId(`choice-${answer}`).classList.add("correct");
+      // a question the fly was handed has no key to grade against — show its
+      // pick neutrally instead of painting its own answer red
+      const freeform = deskBrain.freeformRecord?.problem.origin === "user";
+      // a typed or photographed question may carry no option list at all, and a
+      // chip can go missing when a new problem replaces the old one mid-show,
+      // so a null chip is normal here rather than an error
+      const chip = (i: number): HTMLElement | null =>
+        i >= 0 ? document.getElementById(`choice-${i}`) : null;
+      chip(picked)?.classList.add(freeform ? "picked" : correct ? "correct" : "wrong");
+      if (!freeform && !correct) chip(answer)?.classList.add("correct");
     },
     showVerdict: (text, good) => {
       const v = byId("verdict");
@@ -450,6 +496,10 @@ function startApp(): void {
       badge.className = `badge ${correct === total ? "good" : "bad"}`;
     },
     setBrainBeat: (p) => scene.brain.setBeat(p),
+    // the sequencer owns when a show starts, ends and answers, so the work
+    // sheet arms itself off the same signal the verdict line uses
+    onShowStart: (record) => (record ? work.begin(record) : work.clear()),
+    onAnswered: () => work.answered(),
   });
 
   const applyLesion = (type: LesionType): void => {
@@ -469,6 +519,7 @@ function startApp(): void {
 
   loadProblems();
   renderScience();
+  renderReference();
   wireUI(applyLesion);
   initTrainView((trained) => {
     network = trained;
@@ -495,14 +546,20 @@ function startApp(): void {
     const t = now / 1000;
     // Sequencer runs on every view so the Brain Atlas gets live stage pulses.
     // It only has a show while a problem is active — a waiting fly idles.
-    sequencer.tick(dt);
-    if (byId("view-desk").classList.contains("active")) {
-      director.tick(dt, scene.camera);
+    // Anything thrown here escapes every catch in the app and would take the
+    // whole animation loop down with it, so each frame is isolated.
+    try {
+      sequencer.tick(dt);
+      if (byId("view-desk").classList.contains("active")) {
+        director.tick(dt, scene.camera);
+      }
+      if (atlas && byId("view-atlas").classList.contains("active")) {
+        atlas.tick(dt, t);
+      }
+      scene.tick(dt, t);
+    } catch (err) {
+      console.warn("[loop] frame aborted", describeError(err), err);
     }
-    if (atlas && byId("view-atlas").classList.contains("active")) {
-      atlas.tick(dt, t);
-    }
-    scene.tick(dt, t);
     requestAnimationFrame(loop);
   }
   requestAnimationFrame(loop);

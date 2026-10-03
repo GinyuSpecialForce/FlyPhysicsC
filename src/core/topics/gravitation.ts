@@ -13,8 +13,8 @@ import {
   MOON_MASS,
   SUN_MASS,
   EARTH_SUN_DIST,
-  WORLDS,
 } from "../constants";
+import { worldGravity } from "../constant-table";
 import { M_EARTH, R_EARTH } from "../earth";
 import type { Rng } from "../rng";
 import type { BuiltProblem } from "./distractors";
@@ -75,14 +75,6 @@ function gMultipleConcept(m: number): string {
 /** Surface gravity of a world body. */
 function gOf(mass: number, radius: number): number {
   return (G * mass) / (radius * radius);
-}
-
-/** The named solar-system body in the text, if any. */
-function worldOf(t: string): { mass: number; radius: number } | undefined {
-  for (const [name, w] of Object.entries(WORLDS)) {
-    if (t.includes(name)) return w;
-  }
-  return undefined;
 }
 
 /** Word multipliers used by the hypothetical-worlds field questions. */
@@ -172,7 +164,9 @@ export function solve(ctx: SolveCtx): {
   const times = takeAll(ctx.slots, "time");
   const forces = takeAll(ctx.slots, "force");
   const t = ctx.text.toLowerCase();
-  const world = worldOf(t);
+  // the named body (Pluto in "900 N on earth … same weight on Pluto"), and the
+  // surface gravity it implies — Earth's is the AP 9.8, not GM/R²
+  const gWorld = worldGravity(t);
 
   // ── unit concepts ───────────────────────────────────────────────
   if (/compared to a surface orbit|compared to/.test(t)) {
@@ -330,20 +324,19 @@ export function solve(ctx: SolveCtx): {
     if (/orbit|altitude|aboard/.test(t) && lengths.length) {
       return { value: (masses[0] * G * M_EARTH) / (rAlt * rAlt), unit: "N" };
     }
-    if (world) return { value: masses[0] * gOf(world.mass, world.radius), unit: "N" };
+    if (/\bmars|mercury|venus|jupiter|saturn|pluto|moon\b/.test(t)) {
+      return { value: masses[0] * gWorld, unit: "N" };
+    }
   }
 
   // ── "what mass would have the same weight on Pluto?" ────────────
   if (/mass (?:would|could|does) have the same weight|mass .* same weight/.test(t) && forces.length) {
-    return {
-      value: forces[0] / (world ? gOf(world.mass, world.radius) : G_ACC),
-      unit: "kg",
-    };
+    return { value: forces[0] / gWorld, unit: "kg" };
   }
 
   // weight W = mg (g defaults to Earth surface gravity when not stated)
   if (/weight/.test(t) && masses.length) {
-    const g = accs[0] ?? (world ? gOf(world.mass, world.radius) : G_ACC);
+    const g = accs[0] ?? gWorld;
     return { value: masses[0] * g, unit: "N" };
   }
 
@@ -377,8 +370,8 @@ export function solve(ctx: SolveCtx): {
     return { value: lengths[0] / 2, unit: "m" };
   }
   // named-world surface gravity ("calculate g for the surface of Mercury")
-  if (world && /surface/.test(t) && /\bg\b/.test(t)) {
-    return { value: gOf(world.mass, world.radius), unit: "m/s²" };
+  if (gWorld !== G_ACC && /surface/.test(t) && /\bg\b/.test(t)) {
+    return { value: gWorld, unit: "m/s²" };
   }
   // surface gravity g = GM/r² — only for actual world-surface problems; a
   // bare mass + radius pair must never answer, say, a sling's acceleration

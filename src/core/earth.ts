@@ -1,3 +1,5 @@
-/** Earth reference values. */
-export const M_EARTH = 5.97e24; // kg
-export const R_EARTH = 6.37e6; // m
+/** Earth reference values, derived from the constants table. */
+import { valueOf } from "./constant-table";
+
+export const M_EARTH = valueOf("M_earth"); // kg
+export const R_EARTH = valueOf("R_earth"); // m

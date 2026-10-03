@@ -6,7 +6,8 @@ import { buildChoices } from "./distractors";
 import { take, takeAll, omegaOf, radiusOf } from "../extract";
 import type { SolveCtx } from "../extract";
 import type { SolveResult } from "./index";
-import { G, G_ACC, R_EARTH, WORLDS } from "../constants";
+import { G_ACC, R_EARTH } from "../constants";
+import { worldGravity } from "../constant-table";
 import type { Rng } from "../rng";
 import type { BuiltProblem } from "./distractors";
 
@@ -33,11 +34,8 @@ export function generate(rng: Rng): BuiltProblem {
 }
 
 /** Surface gravity of the named world in the text (Jupiter, Pluto, …), else Earth's. */
-function worldGravity(t: string): number {
-  for (const [name, w] of Object.entries(WORLDS)) {
-    if (t.includes(name)) return (G * w.mass) / (w.radius * w.radius);
-  }
-  return G_ACC;
+function worldG(t: string): number {
+  return worldGravity(t);
 }
 
 export function solve(ctx: SolveCtx): SolveResult {
@@ -113,6 +111,18 @@ export function solve(ctx: SolveCtx): SolveResult {
   ) {
     return { value: masses[0] * omega * omega * r, unit: "N" };
   }
+  // the same tension from a given tangential speed: F_c = mv²/r. Without this
+  // the tension branch below falls through to T = mg, which is the weight, not
+  // the centripetal force.
+  if (
+    (wantsForce || /tension|centripetal/.test(t)) &&
+    /circle|circular|whirl|twirl|sling|spin|rotat|carousel|platter|turntable|washer|cone|orbit|string/.test(t) &&
+    masses.length &&
+    vels.length &&
+    r !== undefined
+  ) {
+    return { value: (masses[0] * vels[0] * vels[0]) / r, unit: "N" };
+  }
   // minimum μs so a spinning object doesn't slide: μs·N = mg → μs = g/a_c
   if (/(?:minimum value of|value of μ|coefficient of static)/.test(t) && masses.length && omega !== undefined && r !== undefined) {
     return { value: G_ACC / (omega * omega * r), unit: "μs" };
@@ -135,7 +145,7 @@ export function solve(ctx: SolveCtx): SolveResult {
   // parachute/chute cords: T = m(g + |Δv/Δt|) on whatever world they're on
   if (/chute|parachute/.test(t) && masses.length && vels.length >= 2 && times.length) {
     return {
-      value: masses[0] * (worldGravity(t) + Math.abs(vels[1] - vels[0]) / times[0]),
+      value: masses[0] * (worldG(t) + Math.abs(vels[1] - vels[0]) / times[0]),
       unit: "N",
     };
   }

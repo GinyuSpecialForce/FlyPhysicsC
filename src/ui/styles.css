@@ -30,6 +30,10 @@
 
 * { box-sizing: border-box; }
 
+/* one hiding rule for everything that toggles; several elements below also
+   declare their own `.hidden` for their own display mode */
+.hidden { display: none; }
+
 html, body {
   margin: 0;
   height: 100%;
@@ -160,7 +164,7 @@ button:disabled {
 .badge.bad { background: rgba(231, 138, 138, 0.12); color: var(--bad); }
 .badge:empty { display: none; }
 
-#problemPanel { flex-shrink: 0; max-height: 46%; overflow: auto; }
+#problemPanel { flex-shrink: 0; max-height: 52%; overflow: auto; }
 #problemText { line-height: 1.55; margin-bottom: 10px; font-size: 13px; }
 #choices { display: flex; flex-direction: column; gap: 2px; }
 .choice {
@@ -171,6 +175,7 @@ button:disabled {
 }
 .choice:hover { background: var(--raise); }
 .choice.correct { background: rgba(159, 216, 200, 0.10); color: var(--good); }
+.choice.picked { background: rgba(255, 209, 102, 0.12); color: var(--accent); }
 .choice.wrong { background: rgba(231, 138, 138, 0.10); color: var(--bad); }
 #verdict { margin-top: var(--pad); min-height: 18px; font-weight: 700; }
 #verdict.good { color: var(--good); }
@@ -219,7 +224,8 @@ button:disabled {
 }
 #freeformInput:focus { background: var(--raise-open); }
 #freeformInput::placeholder { color: var(--muted); }
-.freeform-row { display: flex; gap: 4px; margin-top: 6px; align-items: center; }
+.freeform-row { display: flex; gap: 4px; margin-top: 6px; align-items: center; flex-wrap: wrap; }
+.freeform-row button { white-space: nowrap; font-size: 11.5px; padding: 5px 8px; }
 #freeformExamples { margin-top: 8px; display: flex; flex-direction: column; gap: 2px; }
 .freeform-example {
   text-align: left;
@@ -231,6 +237,62 @@ button:disabled {
   line-height: 1.5;
 }
 .freeform-example:hover { background: var(--raise); color: var(--text); }
+
+/* ── image intake ───────────────────────────────────────────── */
+#freeformBox.dropping { outline: 1px dashed var(--accent); outline-offset: 4px; border-radius: var(--radius); }
+.ocr-status { margin-top: 6px; font-size: 11px; color: var(--muted); line-height: 1.5; }
+.ocr-status.warn { color: var(--accent); }
+.ocr-status.bad { color: #ff9a8a; }
+.ocr-status.hidden, .ocr-card.hidden { display: none; }
+.ocr-card {
+  margin-top: 8px;
+  display: flex;
+  gap: 10px;
+  padding: 8px;
+  border: 1px solid var(--raise);
+  border-radius: var(--radius);
+  background: var(--panel);
+}
+.ocr-thumb {
+  width: 108px;
+  height: auto;
+  max-height: 84px;
+  object-fit: contain;
+  border-radius: 3px;
+  background: #fff;
+  flex: none;
+}
+.ocr-card-body { font-size: 11px; line-height: 1.6; color: var(--muted); }
+.ocr-confidence { font-weight: 700; margin-bottom: 3px; }
+.ocr-confidence.good { color: #8dffb0; }
+.ocr-confidence.warn { color: var(--accent); }
+.ocr-flags { color: #ffd166; }
+.ocr-repairs { opacity: 0.75; }
+.ocr-cta { margin-top: 4px; color: var(--text); }
+
+/* ── reference tab ──────────────────────────────────────────── */
+.ref-list { list-style: none; margin: 0; padding: 0; columns: 2; column-gap: 24px; }
+.ref-list li {
+  break-inside: avoid;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--raise);
+  font-size: 12px;
+}
+.ref-eq { display: block; color: var(--text); }
+.ref-vars { font-size: 10.5px; color: var(--muted); }
+.ref-dim { opacity: 0.6; }
+.ref-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.ref-table th {
+  color: var(--accent);
+  text-align: left;
+  padding: 5px 7px;
+  text-transform: uppercase;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+}
+.ref-table td { padding: 5px 7px; border-top: 1px solid var(--raise); vertical-align: top; }
+.ref-table td.num { font-family: var(--mono, monospace); white-space: nowrap; }
+@media (max-width: 700px) { .ref-list { columns: 1; } }
 
 /* ── thought timeline ───────────────────────────────────────── */
 #timelinePanel { flex: 1; display: flex; flex-direction: column; min-height: 0; }
@@ -265,6 +327,106 @@ button:disabled {
 }
 #stageDetail b { color: var(--text); }
 .stage-accent { font-weight: 700; }
+
+/* ── the fly's work sheet ───────────────────────────────────── */
+/* the timeline shows one stage at a time and overwrites its detail card;
+   this is the same record end to end, for actually checking the reasoning */
+#workOverlay {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(24, 25, 31, 0.72);
+}
+/* an id selector outranks the generic `.hidden` rule, so it has to be
+   repeated here or the backdrop never actually goes away */
+#workOverlay.hidden { display: none; }
+.work-sheet {
+  width: min(560px, 100%);
+  max-height: 100%;
+  display: flex;
+  flex-direction: column;
+  padding: var(--pad) 14px 14px;
+}
+.work-sheet .panel-head { flex: none; }
+#workClose { padding: 4px 10px; font-size: 11px; }
+#workBody { overflow: auto; min-height: 0; }
+
+.work-head {
+  padding: 9px 11px;
+  border-radius: var(--radius);
+  background: var(--raise);
+  box-shadow: inset 2px 0 0 var(--muted);
+}
+.work-head.good { box-shadow: inset 2px 0 0 var(--good); }
+.work-head.bad { box-shadow: inset 2px 0 0 var(--bad); }
+.work-answer { font-weight: 700; font-size: 13px; color: var(--text); line-height: 1.5; }
+.work-head.good .work-answer { color: var(--good); }
+.work-head.bad .work-answer { color: var(--bad); }
+.work-answer-sub { margin-top: 3px; font-size: 11.5px; color: var(--muted); }
+
+.work-sec { margin-top: 14px; }
+.work-sec h3 {
+  margin: 0 0 6px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--accent);
+}
+.work-sec p { margin: 4px 0; font-size: 11.5px; line-height: 1.6; }
+.work-sec b { color: var(--text); }
+.work-flag { color: var(--warn); }
+.work-transcript {
+  margin: 6px 0;
+  padding: 7px 9px;
+  background: var(--bg);
+  border-radius: var(--radius);
+  color: var(--muted);
+  font-family: var(--font);
+  font-size: 11px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  max-height: 110px;
+  overflow: auto;
+}
+
+.work-table { width: 100%; border-collapse: collapse; font-size: 11.5px; }
+.work-table th {
+  text-align: left;
+  padding: 3px 6px;
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--accent);
+}
+.work-table td { padding: 3px 6px; border-top: 1px solid var(--raise); }
+.work-table td.num { text-align: right; white-space: nowrap; }
+
+.work-topics { margin: 6px 0; }
+.work-topics .topic-name { width: 118px; }
+.work-topics .topic-pct { width: 34px; }
+.topic-mark { width: 96px; font-size: 10.5px; color: var(--muted); opacity: 0.55; }
+.topic-mark.on { opacity: 1; }
+
+.work-steps { list-style: none; margin: 0; padding: 0; }
+.work-step { padding: 6px 0; border-top: 1px solid var(--raise); }
+.work-step:first-child { border-top: none; }
+.work-step-head { display: flex; align-items: baseline; gap: 7px; }
+.work-step-head b { color: var(--text); }
+.work-step-num {
+  width: 14px;
+  text-align: right;
+  color: var(--muted);
+  font-size: 10.5px;
+}
+.work-step-region { margin-left: auto; font-size: 10.5px; }
+.work-step-sum { margin: 3px 0 0 21px; font-size: 11.5px; color: var(--text); line-height: 1.6; }
+.work-step ul { margin: 3px 0 0 21px; padding-left: 13px; }
+.work-step li { font-size: 11.5px; color: var(--muted); line-height: 1.6; }
 
 /* ── pages ──────────────────────────────────────────────────── */
 .page {
@@ -325,6 +487,9 @@ button:disabled {
 .pct.good, .lesion-bar > div.good, .topic-bar > div.good { color: var(--good); background: var(--good); }
 .pct.warn, .lesion-bar > div.warn, .topic-bar > div.warn { color: var(--warn); background: var(--warn); }
 .pct.bad, .lesion-bar > div.bad, .topic-bar > div.bad { color: var(--bad); background: var(--bad); }
+/* a bar with no tone class renders as an empty track — the fill has to have a
+   colour of its own or the classifier's distribution is invisible */
+.topic-bar > div.accent { background: var(--accent); }
 
 .topic-row { display: flex; gap: 8px; align-items: center; margin: 3px 0; }
 .topic-name { width: 110px; color: var(--muted); font-size: 11.5px; }

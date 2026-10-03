@@ -1,29 +1,27 @@
-/** Physical constants (SI, intro-course precision). */
-export const G = 6.67e-11; // gravitational constant, N·m²/kg²
-export const K_E = 8.99e9; // Coulomb's constant, N·m²/C²
-export const G_ACC = 9.8; // g near Earth's surface, m/s²
-export const EPS0 = 8.85e-12; // permittivity of free space, F/m
-export const MU0 = 4 * Math.PI * 1e-7; // permeability of free space, T·m/A
-export const E_CHARGE = 1.6e-19; // elementary charge, C
-export { M_EARTH, R_EARTH } from "./earth";
+/**
+ * Physical constants, re-exported from the constants table.
+ *
+ * The table itself lives in `constant-table.ts` — that is the single source of
+ * truth for every number the fly uses, the Reference tab, and the citations in
+ * the thought timeline. This module keeps the historical named bindings so the
+ * solver circuits and the tests are untouched.
+ */
+import { valueOf } from "./constant-table";
+
+export const G = valueOf("G");
+export const K_E = valueOf("K_E");
+export const G_ACC = valueOf("g_std");
+export const EPS0 = valueOf("EPS0");
+export const MU0 = valueOf("MU0");
+export const E_CHARGE = valueOf("E_CHARGE");
+export const M_EARTH = valueOf("M_earth");
+export const R_EARTH = valueOf("R_earth");
 
 /** Solar-system bodies for the universal-gravitation unit (SI, 3-4 sig figs). */
-export const MOON_MASS = 7.342e22; // kg
-export const MOON_DIST = 3.844e8; // Earth–Moon center distance, m
-export const SUN_MASS = 1.989e30; // kg
-export const EARTH_SUN_DIST = 1.496e11; // m
+export const MOON_MASS = valueOf("M_moon"); // kg
+export const MOON_DIST = valueOf("d_moon"); // Earth–Moon center distance, m
+export const SUN_MASS = valueOf("M_sun"); // kg
+export const EARTH_SUN_DIST = valueOf("d_earth_sun"); // m
 
-export interface WorldBody {
-  mass: number; // kg
-  radius: number; // m
-}
-
-export const WORLDS: Record<string, WorldBody> = {
-  mercury: { mass: 3.301e23, radius: 2.4397e6 },
-  venus: { mass: 4.867e24, radius: 6.0518e6 },
-  mars: { mass: 6.417e23, radius: 3.3895e6 },
-  jupiter: { mass: 1.898e27, radius: 7.1492e7 },
-  saturn: { mass: 5.683e26, radius: 6.0268e7 },
-  pluto: { mass: 1.303e22, radius: 1.1883e6 },
-  moon: { mass: MOON_MASS, radius: 1.7374e6 },
-};
+export { WORLDS } from "./constant-table";
+export type { WorldBody } from "./constant-table";
