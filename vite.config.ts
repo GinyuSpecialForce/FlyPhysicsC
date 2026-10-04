@@ -3,7 +3,7 @@ import { defineConfig } from "vite";
 
 export default defineConfig({
   // GitHub Pages project site: serve from /fly-physics-c/
-  base: "/fly-physics-c/",
+  base: "/FlyPhysicsC/",
   build: {
     target: "es2022",
     chunkSizeWarningLimit: 900,
