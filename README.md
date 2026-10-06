@@ -8,7 +8,8 @@ A fly sits at a desk, waiting for you to hand it a question. Above it
 floats a holographic brain:
 its optic lobe tokenizes the problem, its mushroom bodies classify the topic,
 its central complex routes to a symbolic solver circuit, and its legs do the math.
-When it's right, it buzzes its wings. When it's wrong, it slumps.
+When it's right, it flies up to heaven, off one end of the desk. When it's
+wrong, it's dragged off the other end and punished in hell.
 
 **Eval accuracy: 60 / 60 hand-written problems (100%) · chance = 20%**
 
@@ -315,6 +316,7 @@ src/
     equation-sheet.ts the AP sheet as data (formula, variables, inverse forms)
     form-ast.ts       the shared form grammar (parseForm) — one parser, two evaluators
     dimension-solver.ts dimensional analysis over that AST, plus the rescue search
+    textbook.ts       standard setups recognized outright (Atwood, incline, RC, rolling, …)
     symbolic.ts       answers in terms of variables: evaluate, print, compare
     corpus.ts         the shared hive: normalize, validate, merge, replay
     serialize.ts      brain snapshot encode/decode (shipped weights)
