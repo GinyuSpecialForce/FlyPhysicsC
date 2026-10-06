@@ -4,6 +4,7 @@
  * machine synced to the brain's pipeline stages (plus idle grooming).
  */
 import * as THREE from "three";
+import { REALM_PERCH, REALM_YAW, pokeStrength, type Realm, type RealmVisit } from "./realms";
 
 export type FlyState =
   | "idle"
@@ -12,15 +13,24 @@ export type FlyState =
   | "routing"
   | "scribbling"
   | "celebrate"
-  | "happy"
-  | "slump";
+  | "slump"
+  | "heaven"
+  | "hell";
 
-/** How long the happy wiggle plays before the fly settles back to idle. */
-const WIGGLE_SECONDS = 1.2;
+/** Feet-on-the-desk height of the fly's group. */
+const STAND_Y = 1.96;
+/** How long the trip between the desk and a realm takes, each way. */
+const FLIGHT_SECONDS = 1.5;
+/** How long the fly is kept in a realm before it heads back on its own. */
+const STAY_SECONDS = 4.5;
+/** Extra height at mid-flight: a rise toward heaven, a yank and a drop into hell. */
+const FLIGHT_ARC: Record<Realm, number> = { heaven: 0.5, hell: 0.7 };
 
 export interface Fly {
   group: THREE.Group;
   setState: (s: FlyState) => void;
+  /** Where the fly is on its trip to heaven or hell (for the realms to react to). */
+  visit: () => RealmVisit;
   tick: (dt: number, t: number) => void;
 }
 
@@ -231,6 +241,16 @@ export function createFly(): Fly {
     wings.push(wingRoot);
   }
 
+  // halo: worn only in heaven
+  const halo = new THREE.Mesh(
+    new THREE.TorusGeometry(0.13, 0.015, 8, 28),
+    // brighter than 1.0 so the bloom pass makes it glow
+    new THREE.MeshBasicMaterial({ color: new THREE.Color(0xffd95a).multiplyScalar(2.2) }),
+  );
+  halo.rotation.x = Math.PI / 2;
+  halo.visible = false;
+  group.add(halo);
+
   // (contact shadow is a real cast shadow now — see scene.ts)
 
   // ── state machine ───────────────────────────────────────────────
@@ -239,11 +259,19 @@ export function createFly(): Fly {
   let groomTimer = 4;
   let grooming = false;
 
+  // the trip to heaven or hell: the fly owns it, so it always gets home
+  const home = new THREE.Vector3();
+  let homeYaw = 0;
+  let realm: Realm | null = null;
+  let travel = 0; // 0 = at the desk … 1 = arrived
+  let stay = 0;
+  const visitInfo: RealmVisit = { realm: null, presence: 0, stay: 0 };
+
   function setState(s: FlyState): void {
-    // A happy wiggle is a one-shot celebration, so an "idle" nudge from the
-    // show resting must not cut it short — it returns to idle on its own.
-    // Real work always takes over immediately.
-    if (state === "happy" && s === "idle") return;
+    // A stay in heaven or hell is a one-shot, so an "idle" nudge from the
+    // show resting must not cut it short — the fly comes back on its own.
+    // Real work always takes over immediately (and hurries it home).
+    if ((state === "heaven" || state === "hell") && s === "idle") return;
     state = s;
     stateTime = 0;
   }
@@ -251,12 +279,26 @@ export function createFly(): Fly {
   function tick(dt: number, t: number): void {
     stateTime += dt;
 
-    // the wiggle is a one-shot: the fly celebrates, then goes back to waiting
-    // without anyone having to remember to tell it to stop
-    if (state === "happy" && stateTime >= WIGGLE_SECONDS) {
-      state = "idle"; // set directly — setState() guards the wiggle from idle
+    // at the desk: remember where home is, and pick up a new destination
+    if (travel === 0) {
+      home.set(group.position.x, STAND_Y, group.position.z);
+      homeYaw = group.rotation.y;
+      realm = state === "heaven" || state === "hell" ? state : null;
+    }
+    // outbound only toward the realm it set out for — sent somewhere else
+    // mid-trip, it comes home first
+    const outbound = realm !== null && state === realm;
+    // real work waiting at the desk hurries the trip back
+    const rate = outbound ? 1 : state === "idle" ? -1 : -2;
+    travel = Math.min(1, Math.max(0, travel + (rate * dt) / FLIGHT_SECONDS));
+    stay = travel === 1 ? stay + dt : 0;
+    // its time is up: back to waiting, without anyone having to tell it
+    if (outbound && stay >= STAY_SECONDS) {
+      state = "idle"; // set directly — setState() guards the stay from idle
       stateTime = 0;
     }
+    const flying = travel > 0 && travel < 1;
+    const arrived = travel === 1 ? realm : null;
 
     // random idle grooming bouts
     if (state === "idle" || state === "reading") {
@@ -270,7 +312,21 @@ export function createFly(): Fly {
     }
 
     const idleBob = Math.sin(t * 2.1) * 0.012;
-    group.position.y = 1.96 + idleBob; // standing height: feet on the desk
+    group.position.copy(home); // standing height: feet on the desk
+    group.rotation.y = homeYaw;
+    if (realm) {
+      const k = travel * travel * (3 - 2 * travel); // ease out of and into each perch
+      group.position.lerp(REALM_PERCH[realm], k);
+      group.position.y += Math.sin(travel * Math.PI) * FLIGHT_ARC[realm];
+      group.rotation.y = homeYaw + (REALM_YAW[realm] - homeYaw) * k;
+    }
+    group.position.y += idleBob;
+
+    halo.visible = realm === "heaven" && travel > 0.05;
+    if (halo.visible) {
+      halo.scale.setScalar(travel);
+      halo.position.set(-0.44, 0.33 + Math.sin(t * 2.4) * 0.012, 0);
+    }
 
     // antennae always twitch
     antennae.forEach((ant, i) => {
@@ -279,25 +335,41 @@ export function createFly(): Fly {
       ant.rotation.y = s * (0.35 + Math.sin(t * 4.4 + i) * 0.1);
     });
 
-    // wings: default rest; buzz during celebrate; droop during slump
-    if (state === "celebrate") {
+    // wings: default rest; buzz in flight and during celebrate; droop during slump
+    if (flying) {
+      wings.forEach((w, i) => {
+        const s = i === 0 ? -1 : 1;
+        w.rotation.y = s * (0.45 + Math.sin(t * 70 + i) * 0.5);
+        w.rotation.x = -0.35 + Math.sin(t * 70 + 0.5) * 0.2;
+      });
+      // into hell it goes tumbling; everywhere else it flies level
+      group.rotation.z = realm === "hell" && state === "hell" ? Math.sin(t * 17) * 0.3 : 0;
+    } else if (arrived === "heaven") {
+      // bliss: floating over the cloud on slow, easy wingbeats
+      wings.forEach((w, i) => {
+        const s = i === 0 ? -1 : 1;
+        w.rotation.y = s * (0.55 + Math.sin(t * 7 + i) * 0.3);
+        w.rotation.x = -0.3 + Math.sin(t * 7 + 0.5) * 0.15;
+      });
+      group.rotation.z = Math.sin(t * 1.3) * 0.05;
+      group.position.y += Math.sin(t * 1.6) * 0.05;
+    } else if (arrived === "hell") {
+      // punishment: hopping on the hot slab, flinching at every jab
+      const poke = pokeStrength(stay);
+      wings.forEach((w, i) => {
+        const s = i === 0 ? -1 : 1;
+        w.rotation.y = s * (0.1 + poke * 0.6);
+        w.rotation.x = 0.3 - poke * 0.5;
+      });
+      group.rotation.z = Math.sin(t * 38) * 0.04 + poke * 0.28; // jabbed rear pops up
+      group.position.y += Math.abs(Math.sin(t * 11)) * 0.035 + poke * 0.16;
+    } else if (state === "celebrate") {
       wings.forEach((w, i) => {
         const s = i === 0 ? -1 : 1;
         w.rotation.y = s * (0.45 + Math.sin(t * 70 + i) * 0.5);
         w.rotation.x = -0.35 + Math.sin(t * 70 + 0.5) * 0.2;
       });
       group.position.y += Math.abs(Math.sin(t * 30)) * 0.05;
-    } else if (state === "happy") {
-      // a happy little wiggle: shimmy side to side with a small hop, wings
-      // flicking — biggest at the start, easing down as it settles
-      const settle = 1 - Math.min(1, stateTime / WIGGLE_SECONDS);
-      group.rotation.z = Math.sin(stateTime * 14) * 0.09 * (0.4 + settle);
-      group.position.y += Math.abs(Math.sin(stateTime * 14)) * 0.05 * (0.35 + settle);
-      wings.forEach((w, i) => {
-        const s = i === 0 ? -1 : 1;
-        w.rotation.y = s * (0.5 + Math.sin(t * 42 + i) * 0.55 * settle);
-        w.rotation.x = -0.3 + Math.sin(t * 42 + 0.5) * 0.25 * settle;
-      });
     } else if (state === "slump") {
       wings.forEach((w) => {
         w.rotation.y = (w === wings[0] ? -1 : 1) * 0.05;
@@ -321,6 +393,8 @@ export function createFly(): Fly {
       if (grooming && leg.row === 0) {
         lift = 0.55 + Math.sin(t * 16 + leg.side * Math.PI / 1.5) * 0.35;
       }
+      if (flying) lift = -0.15; // tucked in flight
+      else if (arrived === "hell") lift = Math.abs(Math.sin(t * 11 + i * 1.7)) * 0.5; // hot feet
       leg.root.rotation.x = lift;
       leg.femur.rotation.x = leg.side * (0.85 + (grooming && leg.row === 0 ? Math.sin(t * 16) * 0.2 : 0));
       leg.tibia.rotation.x = leg.side * leg.tibiaAngle;
@@ -340,13 +414,23 @@ export function createFly(): Fly {
     } else if (state === "routing") {
       head.rotation.x = -0.4;
       legs.forEach((leg) => (leg.root.rotation.x = -0.15));
-    } else if (state === "happy") {
-      // head bobs along with the shimmy — a fly pleased with itself
-      head.rotation.set(Math.sin(stateTime * 9) * 0.12, Math.sin(stateTime * 7) * 0.35, 0);
+    } else if (state === "heaven") {
+      // gazing up, serene
+      head.rotation.set(-0.3 + Math.sin(stateTime * 1.1) * 0.05, Math.sin(stateTime * 0.9) * 0.25, 0);
+    } else if (state === "hell") {
+      // looking around frantically for a way out
+      head.rotation.set(0.25, Math.sin(stateTime * 13) * 0.4, 0);
     } else if (state === "idle") {
       head.rotation.set(0, Math.sin(t * 0.6) * 0.2, 0);
     }
   }
 
-  return { group, setState, tick };
+  function visit(): RealmVisit {
+    visitInfo.realm = realm;
+    visitInfo.presence = travel;
+    visitInfo.stay = stay;
+    return visitInfo;
+  }
+
+  return { group, setState, visit, tick };
 }

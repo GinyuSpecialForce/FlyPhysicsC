@@ -14,6 +14,7 @@ import { EffectComposer, RenderPass, EffectPass, BloomEffect } from "postprocess
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { createFly, type Fly } from "./fly";
 import { createBrainHolo, type BrainHolo } from "./brain";
+import { createRealms } from "./realms";
 
 export interface SceneHandles {
   scene: THREE.Scene;
@@ -30,9 +31,13 @@ export interface SceneHandles {
   dispose: () => void;
 }
 
-/** Desk-cam framing (the shot Free-orbit hands you when you switch to it). */
-export const DESK_POS = new THREE.Vector3(0.4, 2.6, 5.9);
-export const DESK_LOOK = new THREE.Vector3(0.5, 2.1, 0.5);
+/**
+ * Desk-cam framing (the shot Free-orbit hands you when you switch to it).
+ * Wide enough to hold heaven and hell off either end of the desk, and nudged
+ * right so the HUD panel doesn't sit on top of heaven.
+ */
+export const DESK_POS = new THREE.Vector3(1.5, 3.0, 9.0);
+export const DESK_LOOK = new THREE.Vector3(1.3, 2.1, 0.2);
 
 export function createScene(mount: HTMLElement): SceneHandles {
   const scene = new THREE.Scene();
@@ -321,6 +326,10 @@ const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, preser
     }
   });
 
+  // heaven off the right end of the desk, hell off the left
+  const realms = createRealms();
+  scene.add(realms.group);
+
   const brain = createBrainHolo();
   // Floating over the desk, VNC reaching down toward the fly — the brain it's
   // attached to. Only the horizontal placement belongs out here: brain.tick()
@@ -356,6 +365,7 @@ const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, preser
 
   function tick(dt: number, t: number): void {
     fly.tick(dt, t);
+    realms.tick(dt, t, fly.visit());
     brain.tick(dt, t);
     controls.update();
     lampGlow.intensity = 7 + Math.sin(t * 9.3) * 0.4 + Math.sin(t * 23.7) * 0.2;
