@@ -12,13 +12,15 @@ When it's right, it buzzes its wings. When it's wrong, it slumps.
 
 **Eval accuracy: 60 / 60 hand-written problems (100%) · chance = 20%**
 
+<img width="1440" height="725" alt="Screen Shot 2026-10-05 at 9 18 35 PM" src="https://github.com/user-attachments/assets/8f47e0ef-16ca-43db-a106-9b0f59cdf354" />
+
 </div>
 
 ---
 
-## What this is (honestly)
+## What is this?
 
-A fly does not do physics. This is a **neuromorphic homage**: a tiny neural
+A fly, unfortunately, cannot not do physics. This is a **neuromorphic homage**: a tiny neural
 network shaped by real fly neuroanatomy does the pattern-recognition half of
 problem solving, and hand-built symbolic "motor circuits" do the algebra —
 the same division of labor as a brain plus a calculator.
@@ -105,7 +107,7 @@ It stays honest about grading too. A question you handed the fly has no answer
 key, so the sheet never claims the fly was right or wrong — it prints what it
 computed and marks its classification neutrally instead of as a mistake.
 
-## The hive — teaching the fly, and remembering it everywhere
+## Teaching the fly
 
 When you tell the fly it got one of your questions wrong — or correct it, "this is
 really `shm`" — two things happen. It writes an **episodic memory**, so a similar
@@ -343,9 +345,6 @@ test/                 vitest
   topic on fresh problems; the eval gate is ≥85% on the hand-written bank.
 - **The answer-matcher is scale-aware** — circuits compute in SI; choices
   may read `120 μC` or `8×10⁻¹⁴ N`. A `displayScale` bridges them.
-- **Honest AI** — the learning is classification; the math is symbolic.
-  Where a circuit must assume a value the problem didn't give (e.g. μ = 0.2),
-  the timeline says so.
 
 ## Tests
 
