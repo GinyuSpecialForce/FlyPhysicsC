@@ -6,7 +6,7 @@
  */
 import { createScene, type SceneHandles } from "./viz/scene";
 import { CameraDirector, type CamMode } from "./viz/camera";
-import { trainNetwork, evaluate } from "./core/train";
+import { trainNetwork, evaluate, type TrainState } from "./core/train";
 import type { Network } from "./core/network";
 import { FlyBrain } from "./core/brain";
 import { EVAL_BANK } from "./core/eval-bank";
@@ -16,6 +16,21 @@ import type { Topic } from "./core/features";
 import { FeedbackMemory } from "./core/feedback";
 import { Rng } from "./core/rng";
 import { LESIONS, makeBrain } from "./core/lesions";
+import {
+  fromCorpus,
+  keyHash,
+  makeEntry,
+  mergeCorpora,
+  replayCorpus,
+  shortHash,
+  type HiveEntry,
+  type HiveVerdict,
+} from "./core/corpus";
+import { decodeSnapshot, type DecodedBrain } from "./core/serialize";
+import { HiveStore, browserStorage, type LocalWeightMeta } from "./core/hive-store";
+import { HiveSync, configuredEndpoint, httpTransport } from "./core/sync";
+import { corpusFileText, initHiveView } from "./ui/hiveView";
+import type { SyncState } from "./core/sync";
 import type { LesionType } from "./core/lesions";
 import type { Problem, ProblemSource, ThoughtRecord } from "./core/types";
 import { FREEFORM_EXAMPLES } from "./core/freeform";
@@ -26,7 +41,6 @@ import { Timeline } from "./ui/timeline";
 import { WorkSheet } from "./ui/workView";
 import { initTrainView } from "./ui/trainView";
 import { initLesionView, refreshLesionEvals } from "./ui/lesionView";
-import { renderScience } from "./ui/scienceView";
 import { renderReference } from "./ui/referenceView";
 import { initOcrView } from "./ui/ocrView";
 
@@ -36,11 +50,28 @@ function frame(): Promise<void> {
   return new Promise((r) => requestAnimationFrame(() => r()));
 }
 
-// ── boot: train ONE network while showing progress ──────────────
+// ── boot: restore the shared brain, or train one ─────────────────
 const bootMsg = byId("bootMsg");
 const bootBar = byId("bootBar");
+const deskView = byId("view-desk");
+const atlasView = byId("view-atlas");
 
 let network!: Network;
+
+/** Vite's deploy base, so brain.json/hive.json resolve under a project Pages site. */
+const BASE = import.meta.env.BASE_URL ?? "/";
+
+/** How the shared brain was made — recorded in the locally-saved weights. */
+const DEFAULT_TRAIN = { seed: 1337, epochs: 6, samples: 600 };
+let brainMeta: LocalWeightMeta = { ...DEFAULT_TRAIN, evalAccuracy: 0 };
+/** Identifies the brain the local weight delta started from. */
+let baseDigest = "fresh";
+
+async function loadJson(path: string): Promise<unknown> {
+  const res = await fetch(`${BASE}${path}`, { cache: "no-cache" });
+  if (!res.ok) throw new Error(`${path} → ${res.status}`);
+  return res.json();
+}
 
 async function boot(): Promise<void> {
   const setBoot = (pct: number, msg: string) => {
@@ -48,22 +79,84 @@ async function boot(): Promise<void> {
     bootBar.style.width = `${pct}%`;
   };
 
-  setBoot(8, "Waking the mushroom bodies…");
+  setBoot(6, "Waking the mushroom bodies…");
   await frame();
 
-  const chunks = 6;
-  const samplesPerEpoch = 600;
-  const chunkShare = 72 / chunks;
+  store = new HiveStore(browserStorage());
+  installId = store.installId();
+
+  // the shipped brain and the shared corpus come down together, in parallel
+  const [snapshotRaw, corpusRaw] = await Promise.all([
+    loadJson("brain.json").catch(() => null),
+    loadJson("hive.json").catch(() => null),
+  ]);
+  const decoded: DecodedBrain | null = decodeSnapshot(snapshotRaw);
+  const shared: HiveEntry[] = fromCorpus(corpusRaw);
+  hiveEntries = mergeCorpora(shared, store.loadEntries());
+
   let acc = 0;
-  for (let i = 0; i < chunks; i++) {
-    const result = trainNetwork(1337, 1, samplesPerEpoch);
-    network = result.network;
-    acc = evaluate(network).accuracy;
-    setBoot(8 + (i + 1) * chunkShare, `Training on synthetic problem sets… epoch ${i + 1}/${chunks} — ${(acc * 100).toFixed(0)}% on the exam`);
+  if (decoded) {
+    network = decoded.network;
+    baseDigest = shortHash((snapshotRaw as { weights: string }).weights);
+    brainMeta = {
+      seed: (snapshotRaw as { seed: number }).seed ?? DEFAULT_TRAIN.seed,
+      epochs: (snapshotRaw as { epochs: number }).epochs ?? DEFAULT_TRAIN.epochs,
+      samples: (snapshotRaw as { samples: number }).samples ?? DEFAULT_TRAIN.samples,
+      evalAccuracy: decoded.evalAccuracy,
+    };
+    acc = decoded.evalAccuracy;
+    setBoot(
+      46,
+      `Restored the hive brain — ${decoded.teaches} shared ${decoded.teaches === 1 ? "teach" : "teaches"} already folded in, ${(acc * 100).toFixed(0)}% on the exam`,
+    );
+    await frame();
+  } else {
+    // no snapshot (first run, offline, or one built by a different feature
+    // layout): train here, exactly as this app always has.
+    //
+    // Chunked so the boot bar can paint between epochs, but one continuous
+    // network — the TrainState threads the network and its RNG stream through,
+    // so all six chunks together are exactly one 6-epoch run rather than six
+    // restarts from the same seed. `finalEvalAccuracy` is the eval the trainer
+    // already did per epoch, so there is no second walk of the eval bank.
+    const chunks = DEFAULT_TRAIN.epochs;
+    const chunkShare = 62 / chunks;
+    let state: TrainState | undefined;
+    for (let i = 0; i < chunks; i++) {
+      const result = trainNetwork(DEFAULT_TRAIN.seed, 1, DEFAULT_TRAIN.samples, { state });
+      state = result.state;
+      network = result.network;
+      acc = result.finalEvalAccuracy;
+      setBoot(12 + (i + 1) * chunkShare, `Training on synthetic problem sets… epoch ${i + 1}/${chunks} — ${(acc * 100).toFixed(0)}% on the exam`);
+      await frame();
+    }
+    brainMeta = { ...DEFAULT_TRAIN, evalAccuracy: acc };
+  }
+
+  // this device's own learning, kept only while it still matches the shipped
+  // brain it was layered onto
+  const localWeights = store.loadWeights(baseDigest);
+  if (localWeights) {
+    network = localWeights;
+    setBoot(64, "Picked up this device's own learning…");
     await frame();
   }
 
-  setBoot(96, `Brain ready — ${(acc * 100).toFixed(0)}% on the exam`);
+  // replay only the teaches the current weights have not already absorbed, so
+  // two machines that have seen the same corpus end up with the same brain
+  const unseen = decoded ? hiveEntries.filter((e) => !decoded.bakedKeys.has(keyHash(e))) : hiveEntries;
+  const replayed = replayCorpus(unseen, network);
+  if (replayed) {
+    setBoot(76, `Learned ${replayed} shared ${replayed === 1 ? "teach" : "teaches"} from ${hiveEntries.length} in the hive…`);
+    await frame();
+  }
+
+  // a human's verdict is authoritative at classification time, so the episodic
+  // memory is restored before any brain is built
+  for (const entry of hiveEntries) feedbackMemory.record(entry.text, entry.topic);
+  for (const id of store.loadLearned()) learnedProblems.add(id);
+
+  setBoot(96, `Brain ready — ${(acc * 100).toFixed(0)}% on the exam, ${hiveEntries.length} shared teaches`);
   await frame();
 
   startApp();
@@ -86,6 +179,68 @@ const rng = new Rng(2026);
 const feedbackMemory = new FeedbackMemory();
 const learnedProblems = new Set<string>();
 let lastFeedback: { text: string; topic: Topic } | null = null;
+
+// ── the hive: this device's copy of what everyone has taught ────
+let store!: HiveStore;
+let installId = "anon";
+let hiveEntries: HiveEntry[] = [];
+let hivePanel!: { refresh: () => void };
+const endpoint = configuredEndpoint();
+const hiveSync = new HiveSync({
+  transport: endpoint ? httpTransport(endpoint) : null,
+  onChange: (_state: SyncState) => hivePanel?.refresh(),
+});
+
+let saveTimer: ReturnType<typeof setTimeout> | undefined;
+let pushTimer: ReturnType<typeof setTimeout> | undefined;
+
+/** Write this device's memory out. Debounced, and never throws. */
+function persistLocal(): void {
+  if (saveTimer) clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    saveTimer = undefined;
+    store.saveEntries(hiveEntries);
+    store.saveLearned(learnedProblems);
+    store.saveWeights(network, baseDigest, brainMeta);
+  }, 400);
+}
+
+/** Push our teaches and pull everyone else's. Silent when no endpoint is set. */
+async function syncHive(): Promise<void> {
+  const merged = await hiveSync.exchange(hiveEntries);
+  hiveEntries = merged;
+  store.saveEntries(hiveEntries);
+  hivePanel?.refresh();
+}
+
+/** Coalesce the many clicks of a teaching session into one upload. */
+function schedulePush(): void {
+  if (!hiveSync.transport) return;
+  if (pushTimer) clearTimeout(pushTimer);
+  pushTimer = setTimeout(() => {
+    pushTimer = undefined;
+    void syncHive();
+  }, 2500);
+}
+
+/**
+ * The one place a human verdict enters the fly: it takes the real SGD step and
+ * the episodic memory write (both inside FlyBrain.learn), and then records a
+ * shareable version of the same teach into the hive.
+ *
+ * Only freeform questions reach this. The answer-key auto-teach in
+ * startProblem() is deliberately left out of the hive — those problems already
+ * ship in the eval bank, so sharing them would upload the whole bank.
+ */
+function recordTeach(text: string, topic: Topic, verdict: HiveVerdict, strength: number): void {
+  deskBrain.learn(text, topic, strength);
+  const entry = makeEntry(text, topic, verdict, installId);
+  if (!entry.text && entry.units.length === 0 && entry.keywords.length === 0) return;
+  hiveEntries = store.addEntries([entry]);
+  hivePanel?.refresh();
+  persistLocal();
+  schedulePush();
+}
 
 let timeline!: Timeline;
 let sequencer!: Sequencer;
@@ -120,6 +275,7 @@ function startProblem(): void {
   if (!learnedProblems.has(problem.id)) {
     learnedProblems.add(problem.id);
     deskBrain.learn(problem.text, problem.topic, record.correct ? 0.04 : 0.15);
+    persistLocal();
   }
 
   byId("probNum").textContent = `#${problemIdx + 1}`;
@@ -392,8 +548,10 @@ function wireUI(onLesionSelected: (type: LesionType) => void): void {
   fbTopic.innerHTML = TOPIC_LIST.map((t) => `<option value="${t}">${t}</option>`).join("");
   byId("fbRight").addEventListener("click", () => {
     if (!lastFeedback) return;
-    deskBrain.learn(lastFeedback.text, lastFeedback.topic, 0.25);
-    byId("fbStatus").textContent = "Reinforced — the fly will trust this circuit on similar problems.";
+    recordTeach(lastFeedback.text, lastFeedback.topic, "right", 0.25);
+    // the human just said it got the problem right — let it show the joy
+    scene.fly.setState("happy");
+    byId("fbStatus").textContent = `Reinforced and shared with the hive — ${hiveEntries.length} ${hiveEntries.length === 1 ? "teach" : "teaches"} so far.`;
     byId("fbTeach").classList.add("hidden");
     (byId("fbRight") as HTMLButtonElement).disabled = true;
     (byId("fbWrong") as HTMLButtonElement).disabled = true;
@@ -406,8 +564,8 @@ function wireUI(onLesionSelected: (type: LesionType) => void): void {
   byId("fbTeachBtn").addEventListener("click", () => {
     if (!lastFeedback) return;
     const topic = fbTopic.value as Topic;
-    deskBrain.learn(lastFeedback.text, topic, 0.5);
-    byId("fbStatus").textContent = `Taught: this is a ${topic} problem. Ask again — the fly remembers.`;
+    recordTeach(lastFeedback.text, topic, "taught", 0.5);
+    byId("fbStatus").textContent = `Taught: this is a ${topic} problem, and shared with the hive (${hiveEntries.length} so far). Ask again — the fly remembers.`;
     byId("fbTeach").classList.add("hidden");
     (byId("fbRight") as HTMLButtonElement).disabled = true;
     (byId("fbWrong") as HTMLButtonElement).disabled = true;
@@ -441,7 +599,12 @@ function startApp(): void {
   scene = createScene(byId("sceneMount"));
   director = new CameraDirector();
 
-  timeline = new Timeline(() => sequencer.setPaused(true));
+  // a timeline row click is a pause/resume toggle; the Sequencer owns the
+  // paused state, so the Timeline just reads and writes it
+  timeline = new Timeline(
+    () => sequencer.isPaused,
+    (p) => sequencer.setPaused(p),
+  );
   work = new WorkSheet();
   sequencer = new Sequencer({
     highlightStage: (id) => timeline.highlight(id),
@@ -452,7 +615,6 @@ function startApp(): void {
     onStageChange: (id) => syncAtlasStage(id),
     setFlyState: (state) => scene.fly.setState(state as never),
     activateBrain: (stage) => scene.brain.activate(stage),
-    notifyCamera: (stage) => director.notifyStage(stage),
     paintPaper: (highlights) => {
       if (freeformMode) {
         const rec = deskBrain.freeformRecord;
@@ -518,18 +680,60 @@ function startApp(): void {
   };
 
   loadProblems();
-  renderScience();
   renderReference();
   wireUI(applyLesion);
   initTrainView((trained) => {
     network = trained;
     learnedProblems.clear(); // a fresh network relearns the set
+    // a hand-trained brain knows none of what the crowd taught, so replay it
+    // rather than quietly resetting the hive to zero
+    replayCorpus(hiveEntries, network);
+    baseDigest = `trained:${shortHash(corpusFileText(hiveEntries))}`;
+    brainMeta = { ...DEFAULT_TRAIN, evalAccuracy: evaluate(network).accuracy };
+    persistLocal();
     deskBrain = makeBrain(network, { type: lesion }, feedbackMemory);
     if (byId("view-desk").classList.contains("active") && freeformMode) {
       const ff = byId("freeformInput") as HTMLTextAreaElement;
       if (ff.value.trim()) startFreeform();
     }
     refreshLesionEvals(network, applyLesion);
+  });
+
+  hivePanel = initHiveView({
+    entries: () => hiveEntries,
+    sync: syncHive,
+    exportCorpus: () => {
+      const blob = new Blob([corpusFileText(hiveEntries)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "hive.json";
+      a.click();
+      // the object URL pins the blob in memory until it is revoked
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    },
+    importCorpus: (text: string) => {
+      const incoming = fromCorpus(JSON.parse(text));
+      if (!incoming.length) {
+        byId("hiveStatus").textContent = "That file had no usable teaches in it.";
+        return;
+      }
+      // imported teaches must actually teach THIS fly, not just sit in a list
+      const fresh = incoming.filter((e) => !hiveEntries.some((h) => keyHash(h) === keyHash(e)));
+      for (const entry of fresh) feedbackMemory.record(entry.text, entry.topic);
+      hiveEntries = store.addEntries(incoming);
+      replayCorpus(fresh, network);
+      persistLocal();
+    },
+    forget: () => {
+      if (!confirm("Erase everything this device knows? Every teach you have given and all local learning will be gone.")) return;
+      store.forget();
+      // a reload is the only honest reset: the network has already absorbed
+      // these teaches into its weights, and only a fresh boot un-learns them
+      location.reload();
+    },
+    persistent: () => store.persistent,
+    status: () => hiveSync.getState(),
   });
 
   initLesionView(() => network, applyLesion);
@@ -550,13 +754,14 @@ function startApp(): void {
     // whole animation loop down with it, so each frame is isolated.
     try {
       sequencer.tick(dt);
-      if (byId("view-desk").classList.contains("active")) {
+      const deskVisible = deskView.classList.contains("active");
+      if (deskVisible) {
         director.tick(dt, scene.camera);
+        scene.tick(dt, t);
       }
-      if (atlas && byId("view-atlas").classList.contains("active")) {
+      if (atlas && atlasView.classList.contains("active")) {
         atlas.tick(dt, t);
       }
-      scene.tick(dt, t);
     } catch (err) {
       console.warn("[loop] frame aborted", describeError(err), err);
     }

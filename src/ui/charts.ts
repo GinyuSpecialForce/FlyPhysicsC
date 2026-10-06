@@ -12,7 +12,7 @@ export function drawAccChart(losses: number[], accs: number[]): void {
   const W = canvas.width;
   const H = canvas.height;
   ctx.clearRect(0, 0, W, H);
-  ctx.fillStyle = "#202128";
+  ctx.fillStyle = "#202028";
   ctx.fillRect(0, 0, W, H);
 
   const min = 0;
@@ -23,7 +23,7 @@ export function drawAccChart(losses: number[], accs: number[]): void {
 
   // gridlines
   ctx.strokeStyle = "rgba(255,255,255,0.08)";
-  ctx.fillStyle = "#8b93ad";
+  ctx.fillStyle = "#94949e";
   ctx.font = "11px Hack, monospace";
   for (const g of [0, 0.25, 0.5, 0.75, 1]) {
     ctx.beginPath();
@@ -33,25 +33,25 @@ export function drawAccChart(losses: number[], accs: number[]): void {
     ctx.fillText(`${(g * 100).toFixed(0)}%`, 8, py(g) + 4);
   }
   // accuracy line
-  ctx.strokeStyle = "#cfd5f2";
+  ctx.strokeStyle = "#e8e8ee";
   ctx.lineWidth = 2;
   ctx.beginPath();
   accs.forEach((a, i) => (i === 0 ? ctx.moveTo(px(i), py(a)) : ctx.lineTo(px(i), py(a))));
   ctx.stroke();
   // 85% gate line
-  ctx.strokeStyle = "rgba(230,217,168,0.5)";
+  ctx.strokeStyle = "rgba(255,255,255,0.28)";
   ctx.setLineDash([5, 5]);
   ctx.beginPath();
   ctx.moveTo(40, py(0.85));
   ctx.lineTo(W - 20, py(0.85));
   ctx.stroke();
   ctx.setLineDash([]);
-  ctx.fillStyle = "#e6d9a8";
+  ctx.fillStyle = "#94949e";
   ctx.fillText("85% gate", W - 84, py(0.85) - 6);
   // loss line (secondary, scaled)
   if (losses.length) {
     const lMax = Math.max(...losses);
-    ctx.strokeStyle = "rgba(123,155,211,0.75)";
+    ctx.strokeStyle = "rgba(255,255,255,0.45)";
     ctx.lineWidth = 1.5;
     ctx.beginPath();
     losses.forEach((l, i) => {
@@ -60,8 +60,8 @@ export function drawAccChart(losses: number[], accs: number[]): void {
     });
     ctx.stroke();
   }
-  ctx.fillStyle = "#8b93ad";
-  ctx.fillText("— accuracy (solid) · loss (scaled, blue)", 46, 16);
+  ctx.fillStyle = "#94949e";
+  ctx.fillText("— accuracy (solid) · loss (scaled, grey)", 46, 16);
 }
 
 export function renderConfusion(records: ThoughtRecord[]): void {

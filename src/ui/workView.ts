@@ -20,7 +20,7 @@ import { byId, esc } from "./dom";
 
 /** Colour for a stage, from the one definition the 3D hologram also uses. */
 function stageColor(id: string): string {
-  return STAGES.find((s) => s.id === id)?.color ?? "#9aa5b8";
+  return STAGES.find((s) => s.id === id)?.color ?? "#8a8a92";
 }
 
 /** A user's own question has no key, so "correct" would be a lie. */

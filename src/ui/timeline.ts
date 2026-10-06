@@ -7,19 +7,22 @@ import { STAGES } from "../core/stages";
 import type { ThoughtRecord } from "../core/types";
 import { byId, esc } from "./dom";
 
-const READING = { id: "reading", label: "Reading", region: "Eyes", color: "#9aa5b8" };
+const READING = { id: "reading", label: "Reading", region: "Eyes", color: "#8a8a92" };
 
 function stageMeta(id: string): { label: string; region: string; color: string } {
   if (id === "reading") return READING;
   const s = STAGES.find((st) => st.id === id);
-  return s ? { label: s.label, region: s.region, color: s.color } : { label: id, region: "", color: "#9aa5b8" };
+  return s ? { label: s.label, region: s.region, color: s.color } : { label: id, region: "", color: "#8a8a92" };
 }
 
 export class Timeline {
   private record: ThoughtRecord | null = null;
 
   constructor(
-    private readonly onPause: () => void,
+    /** Is the show held right now? (the Sequencer owns that state) */
+    private readonly isPaused: () => boolean,
+    /** Hold or release the show — wired to Sequencer.setPaused. */
+    private readonly setPaused: (p: boolean) => void,
   ) {}
 
   /** Build the rows for a new problem's record. */
@@ -36,9 +39,11 @@ export class Timeline {
         <span class="stage-name">${esc(r.label)}</span>
         <span class="stage-region">${esc(r.region)}</span>`;
       div.addEventListener("click", () => {
+        // a row click is a toggle: the first click holds the show so the
+        // inspection sticks, the next click lets it run again
+        this.setPaused(!this.isPaused());
         this.highlight(r.id);
         this.showDetail(r.id);
-        this.onPause(); // pause the show so the inspection sticks
       });
       el.appendChild(div);
     }
@@ -52,7 +57,17 @@ export class Timeline {
     byId("timeline").querySelector(`[data-stage="${id}"]`)?.classList.add("active");
   }
 
+  /** The detail card, plus the resume hint while the show is held. */
   showDetail(id: string): void {
+    this.renderDetail(id);
+    if (this.isPaused()) {
+      byId("stageDetail").innerHTML +=
+        `<br><span class="muted">Show held — click a stage row again to let it run.</span>`;
+    }
+  }
+
+  /** The detail card body alone. */
+  private renderDetail(id: string): void {
     const detail = byId("stageDetail");
     if (id === "reading") {
       const src = this.record?.source;

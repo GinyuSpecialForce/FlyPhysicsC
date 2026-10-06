@@ -7,6 +7,14 @@
 import * as THREE from "three";
 import { buildFlyBrain, GROUP_TONE } from "./flyBrain";
 
+/**
+ * The hologram's one resting size. It is set here rather than in scene.ts so
+ * the shell cannot drift out of sync with the answer flash below — the bug
+ * where the brain sat small until a question was asked came from scene.ts
+ * pinning it at 0.55 while tick() grew it to this and never gave it back.
+ */
+export const HOLO_SCALE = 1.15;
+
 export interface BrainHolo {
   group: THREE.Group;
   /** light up a region by stage id; "off" dims everything */
@@ -124,10 +132,11 @@ export function createBrainHolo(): BrainHolo {
       shells[i].mat.uniforms.uIntensity.value = shells[i].intensity;
       shells[i].mat.uniforms.uTime.value = t;
     });
-    if (activeStage === "answer") {
-      const flash = Math.max(0, 1 - beat);
-      group.scale.setScalar(1.15 * (1 + flash * 0.12));
-    }
+    // One size for the hologram's whole life — before the first question as
+    // well as after it. The answer flash only swells it briefly on top of that
+    // resting size, then it eases straight back.
+    const flash = activeStage === "answer" ? Math.max(0, 1 - beat) : 0;
+    group.scale.setScalar(HOLO_SCALE * (1 + flash * 0.12));
     // gentle hologram float
     group.rotation.y = Math.sin(t * 0.4) * 0.22;
     group.position.y = 3.6 + Math.sin(t * 0.9) * 0.07;

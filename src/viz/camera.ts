@@ -1,12 +1,14 @@
 /**
- * Camera director: desk cam (default), brain cam (close-up on the hologram),
- * an auto mode that eases between them as pipeline stages change, and an
- * orbit mode where the user drags freely (OrbitControls owns the camera;
- * the director just watches so handing control back eases smoothly).
+ * Camera director: free orbit (default — the user drags wherever they like),
+ * plus two presets — desk cam and a close-up on the hologram.
+ *
+ * In orbit mode OrbitControls owns the camera and the director just watches,
+ * so handing control to a preset eases in from wherever the user left the view
+ * instead of snapping.
  */
 import * as THREE from "three";
 
-export type CamMode = "desk" | "brain" | "auto" | "orbit";
+export type CamMode = "desk" | "brain" | "orbit";
 
 const tmpDir = new THREE.Vector3();
 
@@ -17,16 +19,8 @@ const DESK_LOOK = new THREE.Vector3(0.5, 2.1, 0.5);
 const BRAIN_POS = new THREE.Vector3(0.6, 4.1, 2.6);
 const BRAIN_LOOK = new THREE.Vector3(0, 3.6, 0.2);
 
-const STAGE_CAMS: Record<string, { pos: THREE.Vector3; look: THREE.Vector3 }> = {
-  encode: { pos: new THREE.Vector3(1.8, 2.4, 5.6), look: new THREE.Vector3(0.4, 1.7, 0.4) },
-  classify: { pos: new THREE.Vector3(0.9, 4.3, 2.4), look: new THREE.Vector3(0, 3.6, 0.2) },
-  route: { pos: new THREE.Vector3(-1.4, 4.0, 2.8), look: new THREE.Vector3(0, 3.5, 0.1) },
-  compute: { pos: new THREE.Vector3(0.3, 3.2, 3.4), look: new THREE.Vector3(0, 2.6, 0.3) },
-  answer: { pos: DESK_POS.clone(), look: DESK_LOOK.clone() },
-};
-
 export class CameraDirector {
-  mode: CamMode = "auto";
+  mode: CamMode = "orbit";
   private pos = DESK_POS.clone();
   private look = DESK_LOOK.clone();
   private targetPos = DESK_POS.clone();
@@ -34,15 +28,6 @@ export class CameraDirector {
 
   setMode(mode: CamMode): void {
     this.mode = mode;
-  }
-
-  notifyStage(stage: string): void {
-    if (this.mode !== "auto") return;
-    const c = STAGE_CAMS[stage];
-    if (c) {
-      this.targetPos.copy(c.pos);
-      this.targetLook.copy(c.look);
-    }
   }
 
   tick(dt: number, camera: THREE.PerspectiveCamera): void {

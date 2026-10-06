@@ -30,7 +30,7 @@ export interface SceneHandles {
   dispose: () => void;
 }
 
-/** Desk-cam framing (also the auto-director's answer shot). */
+/** Desk-cam framing (the shot Free-orbit hands you when you switch to it). */
 export const DESK_POS = new THREE.Vector3(0.4, 2.6, 5.9);
 export const DESK_LOOK = new THREE.Vector3(0.5, 2.1, 0.5);
 
@@ -43,7 +43,10 @@ export function createScene(mount: HTMLElement): SceneHandles {
   camera.position.copy(DESK_POS);
   camera.lookAt(DESK_LOOK);
 
-  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, preserveDrawingBuffer: true });
+  // preserveDrawingBuffer stays off: nothing reads the WebGL canvas back
+// (only the OCR 2D canvas is sampled), and keeping it costs GPU bandwidth
+// on every frame.
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, preserveDrawingBuffer: false });
   renderer.setSize(mount.clientWidth, mount.clientHeight);
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -319,10 +322,12 @@ export function createScene(mount: HTMLElement): SceneHandles {
   });
 
   const brain = createBrainHolo();
-  // sized so the whole CNS fits the desk-cam frame, VNC reaching down
-  // toward the fly — the brain it's attached to
-  brain.group.position.set(0, 2.9, 0.2);
-  brain.group.scale.setScalar(0.55);
+  // Floating over the desk, VNC reaching down toward the fly — the brain it's
+  // attached to. Only the horizontal placement belongs out here: brain.tick()
+  // owns the group's y (it gently floats) and its scale (HOLO_SCALE), so the
+  // hologram keeps one size from the first frame rather than growing when a
+  // question finally gets answered.
+  brain.group.position.set(0, 3.6, 0.2);
   scene.add(brain.group);
 
   // ── post-processing ─────────────────────────────────────────────

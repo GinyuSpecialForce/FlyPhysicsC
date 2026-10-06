@@ -12,9 +12,10 @@ export interface StageInfo {
 }
 
 export const STAGES: StageInfo[] = [
-  { id: "encode", label: "Encoding", region: "Optic lobe", color: "#7fd4ff" },
-  { id: "classify", label: "Classifying", region: "Mushroom bodies", color: "#7fa0e6" },
-  { id: "route", label: "Routing", region: "Central complex", color: "#ffd166" },
-  { id: "compute", label: "Computing", region: "Motor circuits", color: "#8dffb0" },
-  { id: "answer", label: "Answering", region: "Legs + pencil", color: "#e6d9a8" },
+  // stage tones: a graphite ramp on dark — later stages brighten toward white
+  { id: "encode", label: "Encoding", region: "Optic lobe", color: "#94949c" },
+  { id: "classify", label: "Classifying", region: "Mushroom bodies", color: "#a2a2aa" },
+  { id: "route", label: "Routing", region: "Central complex", color: "#b4b4bc" },
+  { id: "compute", label: "Computing", region: "Motor circuits", color: "#c8c8d0" },
+  { id: "answer", label: "Answering", region: "Legs + pencil", color: "#f0f0f5" },
 ];

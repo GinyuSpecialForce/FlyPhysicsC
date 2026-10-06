@@ -101,6 +101,58 @@ export function unitFamilyIndex(unit: string): number {
   return UNIT_FAMILIES.indexOf(unit as (typeof UNIT_FAMILIES)[number]);
 }
 
+/** The family name for a unit family index, for display. */
+export function unitFamilyName(index: number): string {
+  return UNIT_FAMILIES[index] ?? "?";
+}
+
+/**
+ * Sparse form of an input vector — the wire format for the shared hive corpus.
+ *
+ * The 95-float vector is almost always ~6 nonzeros (a couple of unit families
+ * plus a few keyword stems), so storing it densely would make the shared
+ * corpus file ~20x larger than it needs to be for exactly zero information.
+ * Units are [index, count, index, count, …] because a problem can mention two
+ * masses; keywords are plain indices because the hit vector is already binary.
+ */
+export interface SparseVector {
+  /** flat [familyIndex, count, familyIndex, count, …] pairs */
+  units: number[];
+  /** keyword-stem indices that fired */
+  keywords: number[];
+}
+
+export function sparsifyVector(vec: readonly number[]): SparseVector {
+  const units: number[] = [];
+  // only the unit-family region — the tail is keyword stems, handled below
+  for (let i = 0; i < N_UNIT_FEATURES && i < vec.length; i++) {
+    const v = vec[i];
+    if (Number.isFinite(v) && v !== 0) units.push(i, v);
+  }
+  const keywords: number[] = [];
+  for (let k = 0; N_UNIT_FEATURES + k < vec.length; k++) {
+    if (vec[N_UNIT_FEATURES + k] !== 0) keywords.push(k);
+  }
+  return { units, keywords };
+}
+
+/** Exact inverse of sparsifyVector. Out-of-range indices are ignored. */
+export function vectorFromSparse(sparse: SparseVector): number[] {
+  const vec = new Array<number>(N_INPUT_FEATURES).fill(0);
+  const { units, keywords } = sparse;
+  for (let i = 0; i + 1 < units.length; i += 2) {
+    const idx = units[i];
+    const count = units[i + 1];
+    if (Number.isInteger(idx) && idx >= 0 && idx < N_UNIT_FEATURES && Number.isFinite(count)) {
+      vec[idx] = count;
+    }
+  }
+  for (const k of keywords) {
+    if (Number.isInteger(k) && k >= 0 && k < N_KEYWORD_FEATURES) vec[N_UNIT_FEATURES + k] = 1;
+  }
+  return vec;
+}
+
 /** Build the full input vector from slots + keyword hits. */
 export function buildFeatureVector(slots: Slot[], keywordHits: number[]): number[] {
   const vec = new Array<number>(N_INPUT_FEATURES).fill(0);

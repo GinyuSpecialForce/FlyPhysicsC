@@ -29,6 +29,7 @@ export interface BrainRegion {
 export const STAGE_ORDER: StageId[] = ["encode", "classify", "route", "compute", "answer"];
 
 /** Colors keyed by group — shared with the atlas legend via main.ts. */
+/** Colors keyed by group — shared with the atlas legend via main.ts. */
 export const GROUP_TONE: Record<string, number> = {
   "Optic lobe": 0x4fc3f7,
   "Mushroom bodies": 0x7fa0e6,
@@ -285,6 +286,9 @@ export function buildFlyBrain(opts: BrainBuildOpts): FlyBrain {
   // ── activation + pulses ─────────────────────────────────────────
   const pulses: { mesh: THREE.Mesh; from: THREE.Vector3; to: THREE.Vector3; t: number; dur: number }[] = [];
   const pulseMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false });
+  // one geometry shared by every pulse — each pulse still needs its own
+  // material instance because it fades independently
+  const pulseGeo = new THREE.SphereGeometry(0.045, 10, 8);
 
   function stageAnchorWorld(stage: StageId, side: -1 | 0 | 1): THREE.Vector3 {
     const r = regions.find((x) => x.stage === stage && (x.side === side || x.side === 0) && x.name !== "");
@@ -295,7 +299,7 @@ export function buildFlyBrain(opts: BrainBuildOpts): FlyBrain {
     const a = stageAnchorWorld(from, -1);
     const b = stageAnchorWorld(to, -1);
     if (a.length() === 0 || b.length() === 0) return;
-    const mesh = new THREE.Mesh(new THREE.SphereGeometry(0.045, 10, 8), pulseMat.clone());
+    const mesh = new THREE.Mesh(pulseGeo, pulseMat.clone());
     brain.add(mesh);
     pulses.push({ mesh, from: a, to: b, t: 0, dur: 0.6 });
   }
@@ -337,7 +341,7 @@ export function buildFlyBrain(opts: BrainBuildOpts): FlyBrain {
       const k = p.t / p.dur;
       if (k >= 1) {
         brain.remove(p.mesh);
-        p.mesh.geometry.dispose();
+        // geometry is shared across pulses — only the per-pulse material dies
         (p.mesh.material as THREE.Material).dispose();
         pulses.splice(i, 1);
         continue;

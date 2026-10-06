@@ -23,6 +23,8 @@ export interface EpochSample {
 
 export interface TrainResult {
   network: Network;
+  /** hand this back as `state` to keep training where this call left off */
+  state: TrainState;
   /** mean loss per epoch */
   losses: number[];
   /** eval accuracy per epoch (on the hand-written bank) */
@@ -30,6 +32,11 @@ export interface TrainResult {
   /** final accuracy on the eval bank */
   finalEvalAccuracy: number;
   epochs: number;
+}
+
+export interface TrainState {
+  network: Network;
+  rng: Rng;
 }
 
 export interface TrainOptions {
@@ -41,6 +48,17 @@ export interface TrainOptions {
    * epochs away.
    */
   onEpoch?: (epoch: number, loss: number, evalAccuracy: number) => void;
+  /**
+   * Continue from a previous call's `TrainState` rather than starting fresh.
+   *
+   * Training in visible chunks (so the boot bar can animate) has to keep one
+   * network and one RNG stream across those chunks, or every chunk silently
+   * restarts from the same seed and only the first epoch survives — which is
+   * how the boot path ended up claiming "6 epochs" for a 1-epoch brain.
+   * Passing the state through makes N one-epoch calls bit-identical to one
+   * N-epoch call.
+   */
+  state?: TrainState;
 }
 
 export interface EvalResult {
@@ -73,9 +91,9 @@ function makeSamples(topics: readonly Topic[], n: number, rng: Rng): EpochSample
  */
 export function trainNetwork(seed: number, epochs: number, samplesPerEpoch = 600, opts: TrainOptions = {}): TrainResult {
   const lr = opts.lr ?? 0.35;
-  const rng = new Rng(seed);
+  const rng = opts.state?.rng ?? new Rng(seed);
   const topics = TOPIC_LIST;
-  const network = new Network(rng);
+  const network = opts.state?.network ?? new Network(rng);
   const losses: number[] = [];
   const evalAccuracies: number[] = [];
 
@@ -98,6 +116,7 @@ export function trainNetwork(seed: number, epochs: number, samplesPerEpoch = 600
 
   return {
     network,
+    state: { network, rng },
     losses,
     evalAccuracies,
     finalEvalAccuracy: evalAccuracies[evalAccuracies.length - 1],

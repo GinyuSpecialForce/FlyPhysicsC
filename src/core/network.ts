@@ -52,42 +52,42 @@ export class Network {
     return { probs, hidden };
   }
 
-  /** One SGD step on (input → topicIndex). Returns the loss. */
+  /**
+   * One SGD step on (input → topicIndex). Returns the loss.
+   *
+   * The gradients are folded straight into the weights rather than staged in
+   * `gradW0`/`gradW1` matrices first. Each gradient element is consumed by
+   * exactly one update, so materializing them cost two full matrix allocations
+   * per sample (95×24 + 24×12 slots) for nothing. Order matters and is
+   * preserved: `gradHidden` reads `w1`, so it is computed before `w1` moves.
+   */
   trainStep(input: number[], topicIndex: number, lr: number): number {
     const { probs, hidden } = this.forward(input);
     // dL/dlogit for cross-entropy + softmax
     const dLogits = probs.slice();
     dLogits[topicIndex] -= 1;
 
-    // hidden → out grads
-    const gradW1 = matrixZeros(this.nHidden, this.nOut);
-    const gradB1 = new Array<number>(this.nOut).fill(0);
-    for (let k = 0; k < this.nOut; k++) {
-      const g = dLogits[k];
-      gradB1[k] = g;
-      for (let j = 0; j < this.nHidden; j++) gradW1[j][k] = g * hidden[j];
-    }
-    // in → hidden grads
-    const gradHidden = new Array<number>(this.nHidden).fill(0);
+    // in → hidden grads (reads the pre-update w1)
+    const gradHidden = new Array<number>(this.nHidden);
     for (let j = 0; j < this.nHidden; j++) {
       let acc = 0;
       for (let k = 0; k < this.nOut; k++) acc += this.w1[j][k] * dLogits[k];
       gradHidden[j] = acc * (1 - hidden[j] * hidden[j]); // tanh'
     }
-    const gradW0 = matrixZeros(this.nIn, this.nHidden);
-    const gradB0 = new Array<number>(this.nHidden).fill(0);
-    for (let j = 0; j < this.nHidden; j++) {
-      gradB0[j] = gradHidden[j];
-      for (let i = 0; i < this.nIn; i++) gradW0[i][j] = gradHidden[j] * input[i];
+
+    // hidden → out update
+    for (let k = 0; k < this.nOut; k++) {
+      const g = dLogits[k];
+      this.b1[k] -= lr * g;
+      for (let j = 0; j < this.nHidden; j++) this.w1[j][k] -= lr * (g * hidden[j]);
     }
 
-    // SGD update
-    for (let i = 0; i < this.nIn; i++)
-      for (let j = 0; j < this.nHidden; j++) this.w0[i][j] -= lr * gradW0[i][j];
-    for (let j = 0; j < this.nHidden; j++) this.b0[j] -= lr * gradB0[j];
-    for (let j = 0; j < this.nHidden; j++)
-      for (let k = 0; k < this.nOut; k++) this.w1[j][k] -= lr * gradW1[j][k];
-    for (let k = 0; k < this.nOut; k++) this.b1[k] -= lr * gradB1[k];
+    // in → hidden update
+    for (let j = 0; j < this.nHidden; j++) {
+      const g = gradHidden[j];
+      this.b0[j] -= lr * g;
+      for (let i = 0; i < this.nIn; i++) this.w0[i][j] -= lr * (g * input[i]);
+    }
 
     return -Math.log(Math.max(probs[topicIndex], 1e-12));
   }
@@ -101,8 +101,4 @@ function matrix(rows: number, cols: number, fill: () => number): number[][] {
     m.push(row);
   }
   return m;
-}
-
-function matrixZeros(rows: number, cols: number): number[][] {
-  return matrix(rows, cols, () => 0);
 }

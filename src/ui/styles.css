@@ -2,27 +2,29 @@
  * Design system after Impactor (github.com/claration/Impactor):
  *   - Hack monospace everywhere, 12px base
  *   - flat surfaces: no borders, no shadows — separation by lightening the
- *     background only (rgba white overlays mirror Impactor's lighten())
+ *     background only (rgba overlays mirror Impactor's lighten())
  *   - 4px corner radius, 9px padding (THEME_CORNER_RADIUS / THEME_PADDING)
- *   - primary buttons: accent fill with dark text; secondary: raised dark fill
- *   - Impactor's "Plume Dark" palette, hue-shifted from pastel pink to
- *     pastel blue (bg 0x282021→, text 0xf2d5cf→, primary 0xd3869b→)
+ *   - primary buttons: light accent fill with dark text; secondary: raised fill
+ *   - palette: pastel greys, whites, and black — a DARK monochrome graphite
+ *     theme. No hues anywhere: good/warn/bad are told apart by lightness and
+ *     fill (white = success, dim = failure), and the stage ramp brightens
+ *     from pastel grey toward white.
  */
 @import "hack-font/build/web/hack.css";
 
 :root {
-  --bg: #202128;
-  --raise: rgba(255, 255, 255, 0.05);   /* lighten(bg, 0.03) */
-  --raise-hover: rgba(255, 255, 255, 0.15); /* lighten(bg, 0.15) */
-  --raise-open: rgba(255, 255, 255, 0.10);  /* lighten(bg, 0.10) */
-  --panel: rgba(42, 43, 52, 0.94);
-  --text: #cfd5f2;
-  --muted: #8b93ad;
-  --accent: #7b9bd3;                    /* pastel blue */
-  --accent-hi: #90b0e8;                 /* lighten(primary, 0.15) */
-  --good: #9fd8c8;                      /* pastel seafoam */
-  --warn: #e6d9a8;                      /* pastel sand */
-  --bad: #e78a8a;                       /* Impactor's danger coral */
+  --bg: #1b1b21;                        /* pastel dark grey */
+  --raise: rgba(255, 255, 255, 0.05);   /* lighten(bg, 0.05) */
+  --raise-hover: rgba(255, 255, 255, 0.11);
+  --raise-open: rgba(255, 255, 255, 0.08);
+  --panel: rgba(42, 42, 50, 0.94);      /* lifted grey */
+  --text: #e8e8ee;                      /* white-ish */
+  --muted: #94949e;                     /* pastel grey */
+  --accent: #c4c4cc;                    /* light grey */
+  --accent-hi: #dcdce4;
+  --good: #f2f2f6;                      /* white — success is the strong tone */
+  --warn: #b0b0b8;
+  --bad: #86868e;                       /* dim — failure is de-emphasized */
   --radius: 4px;
   --pad: 9px;
   --font: "Hack", ui-monospace, "SF Mono", Menlo, monospace;
@@ -60,7 +62,7 @@ button {
   cursor: pointer;
   transition: background 0.12s ease, color 0.12s ease;
 }
-button:hover { background: var(--raise-hover); color: #ffffff; }
+button:hover { background: var(--raise-hover); color: var(--text); }
 button:active { background: var(--raise-open); }
 button.primary {
   background: var(--accent);
@@ -70,8 +72,8 @@ button.primary {
 button.primary:hover { background: var(--accent-hi); color: var(--bg); }
 button.primary:active { background: var(--accent); }
 button:disabled {
-  background: rgba(123, 155, 211, 0.2);
-  color: rgba(32, 33, 40, 0.5);
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(232, 232, 238, 0.35);
   cursor: default;
 }
 
@@ -123,7 +125,7 @@ button:disabled {
   color: var(--muted);
   padding: 5px 9px;
 }
-.cam-controls button.active { color: var(--accent); background: rgba(70, 71, 82, 0.94); }
+.cam-controls button.active { color: var(--text); background: rgba(255, 255, 255, 0.12); }
 
 #hud {
   position: absolute;
@@ -160,8 +162,8 @@ button:disabled {
   font-weight: 700;
   text-transform: uppercase;
 }
-.badge.good { background: rgba(159, 216, 200, 0.12); color: var(--good); }
-.badge.bad { background: rgba(231, 138, 138, 0.12); color: var(--bad); }
+.badge.good { background: rgba(255, 255, 255, 0.08); color: var(--good); }
+.badge.bad { background: rgba(255, 255, 255, 0.03); color: var(--bad); box-shadow: inset 0 0 0 1px var(--bad); }
 .badge:empty { display: none; }
 
 #problemPanel { flex-shrink: 0; max-height: 52%; overflow: auto; }
@@ -174,9 +176,9 @@ button:disabled {
   color: var(--muted);
 }
 .choice:hover { background: var(--raise); }
-.choice.correct { background: rgba(159, 216, 200, 0.10); color: var(--good); }
-.choice.picked { background: rgba(255, 209, 102, 0.12); color: var(--accent); }
-.choice.wrong { background: rgba(231, 138, 138, 0.10); color: var(--bad); }
+.choice.correct { background: rgba(255, 255, 255, 0.10); color: var(--good); }
+.choice.picked { background: rgba(255, 255, 255, 0.05); color: var(--text); }
+.choice.wrong { background: rgba(255, 255, 255, 0.03); color: var(--bad); text-decoration: line-through; }
 #verdict { margin-top: var(--pad); min-height: 18px; font-weight: 700; }
 #verdict.good { color: var(--good); }
 #verdict.bad { color: var(--bad); }
@@ -242,7 +244,7 @@ button:disabled {
 #freeformBox.dropping { outline: 1px dashed var(--accent); outline-offset: 4px; border-radius: var(--radius); }
 .ocr-status { margin-top: 6px; font-size: 11px; color: var(--muted); line-height: 1.5; }
 .ocr-status.warn { color: var(--accent); }
-.ocr-status.bad { color: #ff9a8a; }
+.ocr-status.bad { color: var(--bad); }
 .ocr-status.hidden, .ocr-card.hidden { display: none; }
 .ocr-card {
   margin-top: 8px;
@@ -264,9 +266,9 @@ button:disabled {
 }
 .ocr-card-body { font-size: 11px; line-height: 1.6; color: var(--muted); }
 .ocr-confidence { font-weight: 700; margin-bottom: 3px; }
-.ocr-confidence.good { color: #8dffb0; }
+.ocr-confidence.good { color: var(--good); }
 .ocr-confidence.warn { color: var(--accent); }
-.ocr-flags { color: #ffd166; }
+.ocr-flags { color: var(--warn); }
 .ocr-repairs { opacity: 0.75; }
 .ocr-cta { margin-top: 4px; color: var(--text); }
 
@@ -339,7 +341,7 @@ button:disabled {
   align-items: center;
   justify-content: center;
   padding: 24px;
-  background: rgba(24, 25, 31, 0.72);
+  background: rgba(16, 16, 21, 0.66);
 }
 /* an id selector outranks the generic `.hidden` rule, so it has to be
    repeated here or the backdrop never actually goes away */
@@ -439,17 +441,6 @@ button:disabled {
 .page a { color: var(--accent); }
 .page b { color: var(--text); }
 
-.region-map { width: 100%; border-collapse: collapse; font-size: 12px; }
-.region-map th {
-  color: var(--accent);
-  text-align: left;
-  padding: 5px 7px;
-  text-transform: uppercase;
-  font-size: 11px;
-  letter-spacing: 0.04em;
-}
-.region-map td { padding: 6px 7px; vertical-align: top; }
-.limit-list { line-height: 1.8; padding-left: 18px; }
 .train-controls { display: flex; gap: 12px; align-items: flex-end; margin: 16px 0; flex-wrap: wrap; }
 .train-controls label { display: flex; flex-direction: column; gap: 3px; font-size: 11px; color: var(--muted); text-transform: uppercase; }
 .train-controls input { width: 110px; }
@@ -466,8 +457,8 @@ button:disabled {
   background: var(--raise);
   color: var(--muted);
 }
-.confusion-cell.hit { background: rgba(159, 216, 200, 0.22); color: var(--good); }
-.confusion-cell.miss { background: rgba(231, 138, 138, 0.18); color: var(--bad); }
+.confusion-cell.hit { background: rgba(255, 255, 255, 0.16); color: var(--good); }
+.confusion-cell.miss { background: rgba(255, 255, 255, 0.05); color: var(--bad); }
 .confusion-cell.head { background: transparent; color: var(--accent); font-weight: 700; }
 
 .lesion-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 9px; margin: 16px 0; }
@@ -484,9 +475,15 @@ button:disabled {
 .lesion-card .summary { color: var(--muted); font-size: 11px; margin-top: 6px; line-height: 1.6; }
 .lesion-bar { height: 4px; border-radius: 2px; background: var(--raise); margin-top: 7px; overflow: hidden; }
 .lesion-bar > div { height: 100%; border-radius: 2px; }
-.pct.good, .lesion-bar > div.good, .topic-bar > div.good { color: var(--good); background: var(--good); }
-.pct.warn, .lesion-bar > div.warn, .topic-bar > div.warn { color: var(--warn); background: var(--warn); }
-.pct.bad, .lesion-bar > div.bad, .topic-bar > div.bad { color: var(--bad); background: var(--bad); }
+/* text and bar fills split out: a .pct number painted its own background
+   over itself (same variable twice), which made the card percentages
+   invisible */
+.pct.good { color: var(--good); }
+.pct.warn { color: var(--warn); }
+.pct.bad { color: var(--bad); }
+.lesion-bar > div.good, .topic-bar > div.good { background: var(--good); }
+.lesion-bar > div.warn, .topic-bar > div.warn { background: var(--warn); }
+.lesion-bar > div.bad, .topic-bar > div.bad { background: var(--bad); }
 /* a bar with no tone class renders as an empty track — the fill has to have a
    colour of its own or the classifier's distribution is invisible */
 .topic-bar > div.accent { background: var(--accent); }
@@ -584,3 +581,43 @@ button:disabled {
 @media (max-width: 900px) {
   #hud { width: 300px; }
 }
+
+/* ── the hive panel (Training view) ─────────────────────────────── */
+#hivePanel { margin-top: 18px; }
+.hive-status {
+  font-size: 12px; color: var(--muted); line-height: 1.5;
+  padding: 8px 10px; margin: 10px 0 4px;
+  background: var(--raise); border-radius: 6px; border-left: 2px solid var(--accent);
+}
+.hive-subhead {
+  font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.08em;
+  color: var(--muted); margin: 14px 0 8px;
+}
+.hive-cols { display: grid; grid-template-columns: minmax(240px, 1fr) minmax(300px, 1.2fr); gap: 22px; }
+@media (max-width: 860px) { .hive-cols { grid-template-columns: 1fr; } }
+
+.hive-bars { display: flex; flex-direction: column; gap: 4px; }
+.hive-bar-row { display: grid; grid-template-columns: 96px 1fr 30px; gap: 8px; align-items: center; }
+.hive-bar-name { font-size: 11px; color: var(--muted); text-transform: capitalize; }
+.hive-bar { height: 8px; background: var(--raise); border-radius: 4px; overflow: hidden; }
+.hive-bar-fill { display: block; height: 100%; background: var(--accent); border-radius: 4px; }
+.hive-bar-n { font-size: 11px; color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }
+
+.hive-queue { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.hive-row {
+  display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: baseline;
+  padding: 6px 8px; background: var(--raise); border-radius: 5px;
+  border-left: 2px solid var(--accent);
+}
+.hive-topic { font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--accent); }
+.hive-text { font-size: 12px; }
+.hive-signal { flex-basis: 100%; font-size: 10.5px; color: var(--muted); }
+
+.file-btn {
+  display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
+  padding: 7px 12px; border: 1px solid var(--raise-hover); border-radius: 6px;
+  font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted);
+}
+.file-btn:hover { color: var(--text); border-color: var(--accent); }
+button.danger { color: var(--bad); }
+button.danger:hover { color: var(--text); }

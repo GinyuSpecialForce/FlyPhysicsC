@@ -38,8 +38,6 @@ export interface SequencerCallbacks {
   setFlyState(state: string): void;
   /** Light up the brain hologram for a stage ("off" = dim). */
   activateBrain(stage: string): void;
-  /** Camera director hook. */
-  notifyCamera(stage: string): void;
   /** Paint the paper: highlighted choice indices (uses the current problem). */
   paintPaper(highlights: number[]): void;
   /** Mark the chosen/correct choices in the HUD. */
@@ -78,6 +76,11 @@ export class Sequencer {
     this.paused = p;
   }
 
+  /** Is the show currently held? (single source of truth for pause state) */
+  get isPaused(): boolean {
+    return this.paused;
+  }
+
   /** Begin a new problem: reset to the reading pseudo-stage (and resume). */
   start(record: ThoughtRecord): void {
     this.record = record;
@@ -90,7 +93,6 @@ export class Sequencer {
     this.cb.showStageDetail("reading");
     this.cb.setFlyState("reading");
     this.cb.activateBrain("off");
-    this.cb.notifyCamera("encode");
   }
 
   /** Advance the show by dt; holds on the answer when it finishes —
@@ -144,7 +146,6 @@ export class Sequencer {
     this.cb.activateBrain(stage === "reading" ? "off" : stage);
     if (!isReading) {
       this.cb.setBrainBeat(0);
-      this.cb.notifyCamera(stage);
       this.cb.showStageDetail(stage);
     }
 

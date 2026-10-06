@@ -211,26 +211,44 @@ const QUESTION_RULES: PriorRule[] = [
   ["acceleration", "kinematics", 1],
 ];
 
+/** Both rule sets, hoisted so keywordPriors allocates nothing extra per call. */
+const RULE_SETS: readonly (readonly PriorRule[])[] = [RULES, QUESTION_RULES];
+
 /**
  * Blend learned topic probabilities with innate priors: multiply by
  * exp(log-prior) (additive in log space), then renormalize. Shared by the
  * brain's classify stage and the training loop, which trains on the
- * residual the priors can't already explain.
+ * residual the priors can't already explain. Plain loops, same operation
+ * order as the old map/reduce — bit-identical output.
  */
 export function blendPriors(probs: number[], logPriors: number[]): number[] {
-  const biased = probs.map((p, i) => p * Math.exp(logPriors[i] ?? 0));
-  const sum = biased.reduce((a, b) => a + b, 0);
-  return sum > 0 ? biased.map((b) => b / sum) : probs.slice();
+  const n = probs.length;
+  const biased = new Array<number>(n);
+  let sum = 0;
+  for (let i = 0; i < n; i++) {
+    const b = probs[i] * Math.exp(logPriors[i] ?? 0);
+    biased[i] = b;
+    sum += b;
+  }
+  if (sum > 0) {
+    for (let i = 0; i < n; i++) biased[i] /= sum;
+    return biased;
+  }
+  return probs.slice();
 }
 
 /** Additive log-prior per topic index, given the problem text. */
 export function keywordPriors(text: string, topics: readonly Topic[]): number[] {
   const t = text.toLowerCase();
   const priors = new Array<number>(topics.length).fill(0);
-  for (const rules of [RULES, QUESTION_RULES]) {
+  // one topic→index map per call instead of an indexOf scan per rule hit
+  const index = new Map<Topic, number>();
+  for (let i = 0; i < topics.length; i++) index.set(topics[i], i);
+  for (const rules of RULE_SETS) {
     for (const [fragment, topic, weight] of rules) {
       if (t.includes(fragment)) {
-        priors[topics.indexOf(topic)] += weight;
+        const i = index.get(topic);
+        if (i !== undefined) priors[i] += weight;
       }
     }
   }

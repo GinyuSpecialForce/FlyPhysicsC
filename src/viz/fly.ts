@@ -12,7 +12,11 @@ export type FlyState =
   | "routing"
   | "scribbling"
   | "celebrate"
+  | "happy"
   | "slump";
+
+/** How long the happy wiggle plays before the fly settles back to idle. */
+const WIGGLE_SECONDS = 1.2;
 
 export interface Fly {
   group: THREE.Group;
@@ -236,12 +240,23 @@ export function createFly(): Fly {
   let grooming = false;
 
   function setState(s: FlyState): void {
+    // A happy wiggle is a one-shot celebration, so an "idle" nudge from the
+    // show resting must not cut it short — it returns to idle on its own.
+    // Real work always takes over immediately.
+    if (state === "happy" && s === "idle") return;
     state = s;
     stateTime = 0;
   }
 
   function tick(dt: number, t: number): void {
     stateTime += dt;
+
+    // the wiggle is a one-shot: the fly celebrates, then goes back to waiting
+    // without anyone having to remember to tell it to stop
+    if (state === "happy" && stateTime >= WIGGLE_SECONDS) {
+      state = "idle"; // set directly — setState() guards the wiggle from idle
+      stateTime = 0;
+    }
 
     // random idle grooming bouts
     if (state === "idle" || state === "reading") {
@@ -272,6 +287,17 @@ export function createFly(): Fly {
         w.rotation.x = -0.35 + Math.sin(t * 70 + 0.5) * 0.2;
       });
       group.position.y += Math.abs(Math.sin(t * 30)) * 0.05;
+    } else if (state === "happy") {
+      // a happy little wiggle: shimmy side to side with a small hop, wings
+      // flicking — biggest at the start, easing down as it settles
+      const settle = 1 - Math.min(1, stateTime / WIGGLE_SECONDS);
+      group.rotation.z = Math.sin(stateTime * 14) * 0.09 * (0.4 + settle);
+      group.position.y += Math.abs(Math.sin(stateTime * 14)) * 0.05 * (0.35 + settle);
+      wings.forEach((w, i) => {
+        const s = i === 0 ? -1 : 1;
+        w.rotation.y = s * (0.5 + Math.sin(t * 42 + i) * 0.55 * settle);
+        w.rotation.x = -0.3 + Math.sin(t * 42 + 0.5) * 0.25 * settle;
+      });
     } else if (state === "slump") {
       wings.forEach((w) => {
         w.rotation.y = (w === wings[0] ? -1 : 1) * 0.05;
@@ -314,6 +340,9 @@ export function createFly(): Fly {
     } else if (state === "routing") {
       head.rotation.x = -0.4;
       legs.forEach((leg) => (leg.root.rotation.x = -0.15));
+    } else if (state === "happy") {
+      // head bobs along with the shimmy — a fly pleased with itself
+      head.rotation.set(Math.sin(stateTime * 9) * 0.12, Math.sin(stateTime * 7) * 0.35, 0);
     } else if (state === "idle") {
       head.rotation.set(0, Math.sin(t * 0.6) * 0.2, 0);
     }
