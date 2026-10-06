@@ -105,6 +105,68 @@ It stays honest about grading too. A question you handed the fly has no answer
 key, so the sheet never claims the fly was right or wrong — it prints what it
 computed and marks its classification neutrally instead of as a mistake.
 
+## The hive — teaching the fly, and remembering it everywhere
+
+When you tell the fly it got one of your questions wrong — or correct it, "this is
+really `shm`" — two things happen. It writes an **episodic memory**, so a similar
+phrasing asked later recalls *your* verdict and overrides the classifier. And it
+joins a **corpus**: a small, shareable record of the teach that other people's
+flies can learn from.
+
+**What leaves your device is narrower than what you typed.** Numbers and named
+constants are stripped from the wording, and the physics *values* stay only as
+features inside the vector the fly learns from — so `2.0 m` becomes `length`, and
+the raw digits do not travel. What does travel is the phrasing itself, unchanged.
+The Training tab lists the exact queue, and **Forget this device** erases it.
+
+**The corpus is shared, never the weights.** Gradient steps don't compose:
+averaging ten people's `w0`/`w1` is unsound, and replaying the same steps in
+different orders gives ten different brains. So every client replays one
+canonically-ordered corpus and lands on identical weights — that is what makes
+"the fly remembers on any computer" a fact rather than a hope. A pre-trained
+weight snapshot ships with the build as a fast start (13.7 KB for all 2,604
+weights), and it records which corpus entries are already baked in so a client
+replays only what is new to it.
+
+Merging is a union with vote counting, keyed on *(phrasing, topic)* and attributed
+to an anonymous per-browser install id. So merging is idempotent (re-importing
+the same file, or a retried upload, adds no new voice), order-independent, and
+loses nothing — there is no coordinator and no conflict to resolve. Ten people
+teaching the same phrasing is ten votes, weighted but capped.
+
+**Out of the box there is no server.** This is a static bundle, so a teach is
+remembered on the machine that gave it, survives a reload, and travels through
+exports you merge by hand:
+
+```bash
+# someone exports "hive.json" from the Training tab
+cp their-hive.json corpus/inbox/hive-someone.json
+npm run hive:merge      # dedupe, vote-count, report what changed
+npm run brain:build     # retrain deterministically + replay the hive → public/brain.json
+# deploy
+```
+
+`brain:build` is deterministic: same corpus, same seed, same weights. If no
+snapshot is present (first run, offline, or one built for a different feature
+layout) the app falls back to training in the browser exactly as it always has.
+
+**To turn on live upload**, set `VITE_HIVE_ENDPOINT` to anything that answers
+`GET` and `POST` — a Cloudflare Worker with KV, a Supabase edge function, a tiny
+proxy:
+
+```bash
+echo 'VITE_HIVE_ENDPOINT=https://my-hive.example.workers.dev' > .env.local
+```
+
+Then teches push in batches and pulls are merged on boot. Nothing changes in the
+UI, and with the variable unset every path is a silent no-op — the panel says so
+rather than pretending. **A public write endpoint needs rate limiting and payload
+caps server-side**; the client batches and caps, but that is not a substitute.
+
+**What is deliberately not shared:** the answer-key auto-teach that runs when the
+fly works a graded problem. Those problems already ship in the eval bank, and
+uploading them would share the whole bank.
+
 ## The two sheets
 
 The fly solves from the same two pages you get on the exam, kept as data in
@@ -141,14 +203,65 @@ generators — the training/eval split is real.
 
 ```bash
 npm install
-npm run dev        # → http://localhost:5173/fly-physics-c/
-npm test           # 128 tests: round-trip, accuracy gates, tokenizer, lesions, fuzz, freeform, hard phrasings, feedback, circular-motion unit, constants, equation sheet, dimensional rescue, OCR normalization, error reporting, symbolic answers, the fly's work
-npm run build      # typecheck + production build
-npm run ocr:assets # one-time: vendor the OCR engine into public/ocr (~11 MB) so the fly can read pictures offline
+npm run dev          # → http://localhost:5173/FlyPhysicsC/ (the vite base path)
+npm test             # 205 tests: round-trip, accuracy gates, tokenizer, lesions, fuzz, freeform, hard phrasings, feedback, circular-motion unit, constants, equation sheet, dimensional rescue, OCR normalization, error reporting, symbolic answers, the fly's work, the hive, hot-path regression guards
+npm run build        # typecheck + production build
+npm run brain:build  # rebuild the shipped brain from public/hive.json (deterministic)
+npm run ocr:assets   # one-time: vendor the OCR engine into public/ocr (~11 MB) so the fly can read pictures offline
 ```
 
-Deploy: any static host. For GitHub Pages, push `dist/` (the Vite `base` is
-already set for project-site paths).
+Deploy: any static host — `dist/` is a plain static bundle with no server
+dependency. See below for GitHub Pages.
+
+## Deploying to GitHub Pages
+
+Live at **https://ginyuspecialforce.github.io/FlyPhysicsC/** — a GitHub Pages
+**project site**, served from the `GinyuSpecialForce/FlyPhysicsC` repo's
+`main` branch. It is a static bundle; Pages just serves `dist/`, built by
+GitHub Actions — the workflow's artifact is what gets deployed, never the
+branch, so nothing in the repo is served directly.
+
+One-time setup, on github.com:
+
+1. Create a repository named **`FlyPhysicsC`** under the owning account and
+   make it public (a private repo needs a paid plan to publish Pages). The
+   repo name becomes the URL path, so keep it — and `base`, below — in sync.
+2. **Settings → Pages → Build and deployment → Source: GitHub Actions.**
+3. Push this source tree to `main`.
+
+```bash
+git remote add origin https://github.com/GinyuSpecialForce/FlyPhysicsC.git
+git push -u origin main
+```
+
+The workflow in `.github/workflows/ci.yml` then runs on every push to `main`
+(and on pull requests, where the same gate runs without deploying), on Node
+22: `npm ci` → `npx tsc --noEmit` → `npm test` → `npm run brain:build` →
+`npm run build` → upload `dist/` as the Pages artifact → deploy. A type error
+or a failing test fails the deploy rather than shipping something broken.
+
+`brain:build` runs in CI on purpose: it is deterministic, so it reproduces
+the committed `public/brain.json` exactly — but if someone edits the corpus
+and forgets to rebuild locally, the deployed brain still matches the corpus
+instead of quietly going stale.
+
+Re-publish without a commit: the **Actions** tab → *CI* → *Run workflow*.
+
+**This is a project site, so `base` is `"/FlyPhysicsC/"`** in `vite.config.ts`
+— the URL path the repo name produces, case included. A user site
+(`account.github.io`, served at the root) would use `base: "/"`, and that is
+the only line that differs: every runtime path goes through
+`import.meta.env.BASE_URL`, including the `brain.json` and `hive.json` the fly
+loads at boot. Rename the repo and `base` has to follow.
+
+A stray committed `dist/` cannot affect what Pages serves (it deploys the
+workflow artifact), but delete it anyway so nobody mistakes it for the
+deployed build.
+
+**Not committed, by design:** `dist/` and `node_modules/`. Everything else is,
+including the 10 MB of OCR assets in `public/ocr` — they're committed on
+purpose so a deploy needs no network fetch and the picture-reading feature
+works on a first clone.
 
 ## The views
 
@@ -158,14 +271,15 @@ already set for project-site paths).
   compound eyes, proboscis, two-segment antennae, three-segment legs planted
   on the desk (with idle grooming), iridescent swept wings, and a contact
   shadow. The thought timeline walks through each pipeline stage with the
-  actual data; click any stage to inspect — the show pauses while you look.
+  actual data; click any stage to inspect — the show holds while you look,
+  and the next click lets it run again.
   Once the fly has an answer, **Show the fly's work** (or `W`) opens the whole
   trace at once: quantities, the classifier's full distribution, the equation
   it cited and the ones it passed over.
   The fly never works on its own: click **Ask the fly** to type any
   question, or **Practice problem** to pull one from the set — otherwise
-  it just grooms and waits. Desk / Brain / Auto-director / Free-orbit
-  cameras.
+  it just grooms and waits. Free-orbit is the default (drag to look around,
+  scroll to zoom); Desk / Brain cams ease to preset framings.
 - **Brain Atlas** — a separate orbit-able view of the anatomically-grounded
   CNS: lamina→medulla→lobula→lobula plate optic lobes, mushroom bodies with
   calyx/peduncle/α-β/γ lobes, the central complex stack (bridge, fan-shaped
@@ -182,7 +296,6 @@ already set for project-site paths).
 - **Reference** — the AP Physics C equation sheet and the constants table,
   rendered from the same data the circuits solve with. What the fly cites is
   what you read here.
-- **The Science** — what's real, what's homage, what's limited.
 
 ## Project layout
 
@@ -201,15 +314,22 @@ src/
     form-ast.ts       the shared form grammar (parseForm) — one parser, two evaluators
     dimension-solver.ts dimensional analysis over that AST, plus the rescue search
     symbolic.ts       answers in terms of variables: evaluate, print, compare
+    corpus.ts         the shared hive: normalize, validate, merge, replay
+    serialize.ts      brain snapshot encode/decode (shipped weights)
+    hive-store.ts     this device's memory (localStorage), injectable Storage
+    sync.ts           pluggable transport for live hive sync (never throws)
     constant-table.ts the constants table; constant-answers.ts direct lookups
     ocr.ts            in-browser image reading (lazy, optional)
     train.ts          training loop, eval, registry-driven lesion evals
     eval-bank.ts      60 hand-written exam problems
     bank.ts           synthetic problem generation
     topics/           one module per topic: generator + solver circuit
-  ui/                 DOM modules: sequencer, timeline, work sheet, views (styles.css)
+  ui/                 DOM modules: sequencer, timeline, work sheet, hive panel, views (styles.css)
   viz/                Three.js: scene, fly, brain hologram, atlas, camera director
-scripts/              fetch-ocr-assets.mjs (one-time OCR vendoring)
+scripts/              fetch-ocr-assets.mjs (one-time OCR vendoring),
+                      build-brain.ts + merge-hive.ts (hive:merge / brain:build)
+public/               brain.json + hive.json (the brain that ships with the site)
+corpus/inbox/         drop contributed hive-*.json here
 test/                 vitest
 ```
 
@@ -261,6 +381,20 @@ test/                 vitest
   every bar filled, misclassifications called out rather than hidden, the OCR
   source block, every stage summary and detail in order — grading claims
   withheld on keyless questions, and untrusted text escaped throughout
+- the hive: normalization that still recalls on a raw question typed locally,
+  merge that is idempotent/order-independent/vote-capped, replay that is
+  deterministic and actually moves the classifier, snapshot round-trips, and
+  untrusted payloads (NaN features, unknown topics, future versions, junk)
+  rejected instead of poisoning the shipped brain
+- hot-path regression guards: `trainStep` stays bit-identical to the
+  staged-gradient reference (the brain.json determinism invariant rests on
+  that math), allocates no per-sample gradient matrices (counted with V8
+  allocation sampling against the staged reference), and keeps a bounded
+  per-step cost
+- hive storage: reload survival, corrupt and foreign-version data discarded,
+  stale local weights dropped when the site ships a new brain, quota failure
+  degraded to in-memory, and sync never throwing — unreachable hive keeps the
+  fly working offline
 ```
 
 ## License
