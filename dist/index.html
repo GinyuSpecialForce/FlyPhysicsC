@@ -5,10 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Fly Physics C — a virtual fly brain that solves AP Physics</title>
     <meta name="description" content="A fly-brain-inspired neural network that learned AP Physics C, visualized in 3D: watch it think." />
-    <script type="module" crossorigin src="/fly-physics-c/assets/index-B6yPrjaz.js"></script>
-    <link rel="modulepreload" crossorigin href="/fly-physics-c/assets/three-DzPORkft.js">
-    <link rel="modulepreload" crossorigin href="/fly-physics-c/assets/postprocessing-Bh-hhGwp.js">
-    <link rel="stylesheet" crossorigin href="/fly-physics-c/assets/index-D9g0_dgb.css">
+    <script type="module" crossorigin src="/FlyPhysicsC/assets/index-BD7RA7wA.js"></script>
+    <link rel="modulepreload" crossorigin href="/FlyPhysicsC/assets/three-DzPORkft.js">
+    <link rel="modulepreload" crossorigin href="/FlyPhysicsC/assets/postprocessing-Bh-hhGwp.js">
+    <link rel="stylesheet" crossorigin href="/FlyPhysicsC/assets/index-BA_CUKuq.css">
   </head>
   <body>
     <div id="boot" class="boot-overlay">
@@ -26,7 +26,6 @@
       <button data-view="train">Training</button>
       <button data-view="lesion">Lesion Lab</button>
       <button data-view="reference">Reference</button>
-      <button data-view="science">The Science</button>
       <div class="nav-spacer"></div>
       <button id="perfToggle" title="Disable bloom & reduce resolution for weak GPUs">Low power</button>
     </nav>
@@ -37,8 +36,7 @@
       <div class="cam-controls">
         <button data-cam="desk">Desk cam</button>
         <button data-cam="brain">Brain cam</button>
-        <button data-cam="auto" class="active">Auto director</button>
-        <button data-cam="orbit" title="Drag to look around · scroll to zoom">Free orbit</button>
+        <button data-cam="orbit" class="active" title="Drag to look around · scroll to zoom">Free orbit</button>
       </div>
       <div id="hud">
         <div class="panel" id="problemPanel">
@@ -149,6 +147,38 @@
           <div class="panel-head"><span>Log</span></div>
           <div id="trainLog" class="log"></div>
         </div>
+
+        <!-- The hive: teaches shared between every deployed copy of the fly -->
+        <div class="panel" id="hivePanel">
+          <div class="panel-head">
+            <span>The hive — what everyone has taught the fly</span>
+            <span class="badge" id="hiveCount">0 shared</span>
+          </div>
+          <p class="muted small">
+            When you tell the fly it got a freeform question wrong, the teach joins
+            this list, is replayed into the brain here, and is merged into the
+            corpus that ships with the site. Numbers and named constants are
+            stripped from the wording; the wording itself is not. Everything below
+            is exactly what leaves this device.
+          </p>
+          <div id="hiveStatus" class="hive-status">No teaches yet.</div>
+          <div class="train-controls">
+            <button id="hiveSync">Sync now</button>
+            <button id="hiveExport">Export my teaches</button>
+            <label class="file-btn">Import a hive file<input id="hiveFile" type="file" accept="application/json,.json" hidden /></label>
+            <button id="hiveForget" class="danger">Forget this device</button>
+          </div>
+          <div class="hive-cols">
+            <div>
+              <div class="hive-subhead">Shared by topic</div>
+              <div id="hiveTopics"></div>
+            </div>
+            <div>
+              <div class="hive-subhead">Queued to share</div>
+              <div id="hiveQueue"></div>
+            </div>
+          </div>
+        </div>
       </section>
     </main>
 
@@ -171,11 +201,6 @@
     <!-- Reference: the equation sheet and the constants table -->
     <main id="view-reference" class="view">
       <section class="page" id="referenceContent"></section>
-    </main>
-
-    <!-- Science page -->
-    <main id="view-science" class="view">
-      <section class="page" id="scienceContent"></section>
     </main>
 
     <footer id="footer">
