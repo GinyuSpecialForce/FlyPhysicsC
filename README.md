@@ -9,7 +9,9 @@ floats a holographic brain:
 its optic lobe tokenizes the problem, its mushroom bodies classify the topic,
 its central complex routes to a symbolic solver circuit, and its legs do the math.
 When it's right, it flies up to heaven, off one end of the desk. When it's
-wrong, it's dragged off the other end and punished in hell.
+wrong, it's dragged off the other end and punished in hell. Both are opt-in:
+tick the **Heaven & hell** checkbox on the desk and the realms appear — leave
+it unticked and the fly just celebrates or slumps where it sits.
 
 **Eval accuracy: 60 / 60 hand-written problems (100%) · chance = 20%**
 
