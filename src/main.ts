@@ -494,6 +494,14 @@ function syncAtlasStage(stage: string): void {
   atlas.activate(stage);
 }
 
+/**
+ * The heaven/hell checkbox: the realms are opt-in — until the human ticks
+ * this, no verdict or ruling sends the fly anywhere but a wiggle at its desk.
+ */
+function realmsOn(): boolean {
+  return (byId("realmToggle") as HTMLInputElement).checked;
+}
+
 // ── wiring ──────────────────────────────────────────────────────
 function wireUI(onLesionSelected: (type: LesionType) => void): void {
   document.querySelectorAll("#nav button[data-view]").forEach((b) => {
@@ -549,8 +557,9 @@ function wireUI(onLesionSelected: (type: LesionType) => void): void {
   byId("fbRight").addEventListener("click", () => {
     if (!lastFeedback) return;
     recordTeach(lastFeedback.text, lastFeedback.topic, "right", 0.25);
-    // the human just said it got the problem right — up it goes
-    scene.fly.setState("heaven");
+    // the human just said it got the problem right — up it goes, but only if
+    // the heaven/hell checkbox is ticked; otherwise it just celebrates
+    scene.fly.setState(realmsOn() ? "heaven" : "celebrate");
     byId("fbStatus").textContent = `Reinforced and shared with the hive — ${hiveEntries.length} ${hiveEntries.length === 1 ? "teach" : "teaches"} so far.`;
     byId("fbTeach").classList.add("hidden");
     (byId("fbRight") as HTMLButtonElement).disabled = true;
@@ -565,8 +574,9 @@ function wireUI(onLesionSelected: (type: LesionType) => void): void {
     if (!lastFeedback) return;
     const topic = fbTopic.value as Topic;
     recordTeach(lastFeedback.text, topic, "taught", 0.5);
-    // the human just said it got the problem wrong — down it goes
-    scene.fly.setState("hell");
+    // the human just said it got the problem wrong — down it goes, but only if
+    // the heaven/hell checkbox is ticked; otherwise it just slumps
+    scene.fly.setState(realmsOn() ? "hell" : "slump");
     byId("fbStatus").textContent = `Taught: this is a ${topic} problem, and shared with the hive (${hiveEntries.length} so far). Ask again — the fly remembers.`;
     byId("fbTeach").classList.add("hidden");
     (byId("fbRight") as HTMLButtonElement).disabled = true;
@@ -578,6 +588,11 @@ function wireUI(onLesionSelected: (type: LesionType) => void): void {
   deskLesion.innerHTML = LESIONS.map((l) => `<option value="${l.type}">${l.label}</option>`).join("");
   deskLesion.addEventListener("change", () => {
     onLesionSelected(deskLesion.value as LesionType);
+  });
+
+  // heaven and hell appear only when the feature is switched on
+  (byId("realmToggle") as HTMLInputElement).addEventListener("change", (e) => {
+    scene.setRealmsVisible((e.target as HTMLInputElement).checked);
   });
 
   byId("perfToggle").addEventListener("click", () => {
@@ -664,7 +679,7 @@ function startApp(): void {
     // sheet arms itself off the same signal the verdict line uses
     onShowStart: (record) => (record ? work.begin(record) : work.clear()),
     onAnswered: () => work.answered(),
-  });
+  }, realmsOn);
 
   const applyLesion = (type: LesionType): void => {
     lesion = type;

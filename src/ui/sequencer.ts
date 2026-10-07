@@ -61,6 +61,21 @@ export interface SequencerCallbacks {
   onAnswered(): void;
 }
 
+/**
+ * What the fly does when a show reaches its verdict. Heaven and hell are
+ * opt-in: until the human ticks the checkbox, a graded answer only celebrates
+ * or slumps — the realms wait, unused.
+ */
+export function verdictFlyState(o: {
+  freeform: boolean;
+  happy: boolean;
+  correct: boolean;
+  realms: boolean;
+}): "celebrate" | "slump" | "heaven" | "hell" {
+  if (o.realms && !o.freeform) return o.correct ? "heaven" : "hell";
+  return o.happy ? "celebrate" : "slump";
+}
+
 export class Sequencer {
   private record: ThoughtRecord | null = null;
   private stageIdx = -1;
@@ -70,7 +85,11 @@ export class Sequencer {
   private paused = false;
   private rested = false;
 
-  constructor(private readonly cb: SequencerCallbacks) {}
+  constructor(
+    private readonly cb: SequencerCallbacks,
+    /** Is the heaven/hell checkbox ticked? (the feature is opt-in) */
+    private readonly realmsOn: () => boolean = () => false,
+  ) {}
 
   setPaused(p: boolean): void {
     this.paused = p;
@@ -165,10 +184,11 @@ export class Sequencer {
       // a freeform answer is a success when the fly actually computed one
       const happy = freeform ? this.record.computedAnswer != null : correct;
       this.cb.showVerdict(s.summary, happy);
-      // a graded answer has consequences: heaven for a hit, hell for a miss. A
+      // a graded answer has consequences: heaven for a hit, hell for a miss —
+      // but only when the human has ticked the heaven/hell checkbox. A
       // question the fly was handed has no key, so it only celebrates or
       // slumps until the human rules on it
-      this.cb.setFlyState(freeform ? (happy ? "celebrate" : "slump") : correct ? "heaven" : "hell");
+      this.cb.setFlyState(verdictFlyState({ freeform, happy, correct, realms: this.realmsOn() }));
       this.cb.setBrainBeat(0.001);
       // the fly has an answer — its work is finished and can now be shown
       this.cb.onAnswered();

@@ -27,6 +27,8 @@ export interface SceneHandles {
   /** Set the penciled-in answer shown on the paper in freeform mode. */
   setFlyAnswer: (answer: string) => void;
   setLowPower: (on: boolean) => void;
+  /** Show or hide heaven and hell (the feature is opt-in — see realmToggle). */
+  setRealmsVisible: (on: boolean) => void;
   tick: (dt: number, t: number) => void;
   dispose: () => void;
 }
@@ -326,8 +328,10 @@ const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, preser
     }
   });
 
-  // heaven off the right end of the desk, hell off the left
+  // heaven off the right end of the desk, hell off the left — hidden until
+  // the human ticks the heaven/hell checkbox, since the feature is opt-in
   const realms = createRealms();
+  realms.group.visible = false;
   scene.add(realms.group);
 
   const brain = createBrainHolo();
@@ -380,5 +384,18 @@ const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, preser
     mount.removeChild(renderer.domElement);
   }
 
-  return { scene, camera, renderer, controls, fly, brain, setPaper, setFlyAnswer, setLowPower, tick, dispose };
+  return {
+    scene,
+    camera,
+    renderer,
+    controls,
+    fly,
+    brain,
+    setPaper,
+    setFlyAnswer,
+    setLowPower,
+    setRealmsVisible: (on) => (realms.group.visible = on),
+    tick,
+    dispose,
+  };
 }
