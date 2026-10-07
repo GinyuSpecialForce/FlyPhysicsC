@@ -549,8 +549,8 @@ function wireUI(onLesionSelected: (type: LesionType) => void): void {
   byId("fbRight").addEventListener("click", () => {
     if (!lastFeedback) return;
     recordTeach(lastFeedback.text, lastFeedback.topic, "right", 0.25);
-    // the human just said it got the problem right — let it show the joy
-    scene.fly.setState("happy");
+    // the human just said it got the problem right — up it goes
+    scene.fly.setState("heaven");
     byId("fbStatus").textContent = `Reinforced and shared with the hive — ${hiveEntries.length} ${hiveEntries.length === 1 ? "teach" : "teaches"} so far.`;
     byId("fbTeach").classList.add("hidden");
     (byId("fbRight") as HTMLButtonElement).disabled = true;
@@ -565,6 +565,8 @@ function wireUI(onLesionSelected: (type: LesionType) => void): void {
     if (!lastFeedback) return;
     const topic = fbTopic.value as Topic;
     recordTeach(lastFeedback.text, topic, "taught", 0.5);
+    // the human just said it got the problem wrong — down it goes
+    scene.fly.setState("hell");
     byId("fbStatus").textContent = `Taught: this is a ${topic} problem, and shared with the hive (${hiveEntries.length} so far). Ask again — the fly remembers.`;
     byId("fbTeach").classList.add("hidden");
     (byId("fbRight") as HTMLButtonElement).disabled = true;

@@ -165,7 +165,10 @@ export class Sequencer {
       // a freeform answer is a success when the fly actually computed one
       const happy = freeform ? this.record.computedAnswer != null : correct;
       this.cb.showVerdict(s.summary, happy);
-      this.cb.setFlyState(happy ? "celebrate" : "slump");
+      // a graded answer has consequences: heaven for a hit, hell for a miss. A
+      // question the fly was handed has no key, so it only celebrates or
+      // slumps until the human rules on it
+      this.cb.setFlyState(freeform ? (happy ? "celebrate" : "slump") : correct ? "heaven" : "hell");
       this.cb.setBrainBeat(0.001);
       // the fly has an answer — its work is finished and can now be shown
       this.cb.onAnswered();

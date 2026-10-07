@@ -7,15 +7,12 @@
  * instead of snapping.
  */
 import * as THREE from "three";
+import { DESK_LOOK, DESK_POS } from "./scene";
 
 export type CamMode = "desk" | "brain" | "orbit";
 
 const tmpDir = new THREE.Vector3();
 
-// Framed closer than before so the fly is the hero of the desk shot, with
-// the lamp still visible at frame-left for context.
-const DESK_POS = new THREE.Vector3(0.4, 2.6, 5.9);
-const DESK_LOOK = new THREE.Vector3(0.5, 2.1, 0.5);
 const BRAIN_POS = new THREE.Vector3(0.6, 4.1, 2.6);
 const BRAIN_LOOK = new THREE.Vector3(0, 3.6, 0.2);
 

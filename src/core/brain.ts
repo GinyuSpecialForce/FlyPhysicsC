@@ -11,6 +11,7 @@ import { Network } from "./network";
 import { topicModule } from "./topics/index";
 import type { SolveResult } from "./topics/index";
 import { constantAnswer } from "./constant-answers";
+import { textbookAnswer } from "./textbook";
 import { suppliedConstants } from "./constant-table";
 import { citeEquation, equationForConcept, rescueSolve } from "./dimension-solver";
 import type { Citation, RescueResult } from "./dimension-solver";
@@ -211,6 +212,12 @@ export class FlyBrain {
     // A question about a table value ("what is g on Mars?") is a lookup, not a
     // derivation — the constants table answers it before any circuit runs.
     const cAnswer = constantAnswer(problem.text);
+    // A standard textbook setup (an Atwood machine, an RC circuit charging) is
+    // recognized outright and solved with its own equation. Recognizing it is
+    // the classifier's and router's work, so a fly lesioned there gets no such
+    // shortcut and falls through to whatever circuit it was sent to.
+    const routingIntact = this.lesion.type !== "mushroom-bodies" && this.lesion.type !== "central-complex";
+    const textbook = !cAnswer && routingIntact ? textbookAnswer(ctx, finalQuestion(problem.text)) : undefined;
     // If the routed circuit uses none of the slot families the problem
     // actually contains, it cannot bind anything — reroute to the
     // highest-ranked circuit that CAN. A computed zero is a legitimate
@@ -218,7 +225,7 @@ export class FlyBrain {
     const present = new Set(slots.map((s) => s.unit));
     const canBind = (topic: Topic): boolean =>
       (TOPIC_FAMILIES[topic] ?? []).some((f) => present.has(f));
-    if (!cAnswer && !canBind(circuitTopic)) {
+    if (!cAnswer && !textbook && !canBind(circuitTopic)) {
       for (const [topic] of ranked(probs)) {
         if (topic === routedTopic || !canBind(topic)) continue;
         circuitTopic = topic;
@@ -228,7 +235,7 @@ export class FlyBrain {
     const mod = topicModule(circuitTopic);
     let result: SolveResult = cAnswer
       ? { value: cAnswer.value, unit: cAnswer.unit }
-      : mod.solve(ctx);
+      : (textbook ?? mod.solve(ctx));
     // answer-family check: if the question asks for a KIND of quantity this
     // circuit can't produce (wrong unit — volts for an amps question), try
     // the next-ranked circuits that can. A number in the wrong family is a
@@ -249,7 +256,7 @@ export class FlyBrain {
       : wanted
         ? !ok(result)
         : result.concept === undefined && !Number.isFinite(result.value);
-    if (!cAnswer && !lesioned && failed) {
+    if (!cAnswer && !textbook && !lesioned && failed) {
       // with no quantities at all, every circuit is equally able to "bind"
       const alts = ranked(probs)
         .filter(([topic]) => topic !== circuitTopic && (present.size === 0 || canBind(topic)))
@@ -334,7 +341,9 @@ export class FlyBrain {
     const computeDetails: string[] = [
       cAnswer
         ? `Read off the constants table: ${cAnswer.primary.display} — ${cAnswer.how}`
-        : circuitTopic !== routedTopic
+        : textbook
+          ? `Recognized a standard setup: ${textbook.equation}`
+          : circuitTopic !== routedTopic
           ? `Rerouted: the ${routedTopic} circuit couldn't bind this phrasing — the ${circuitTopic} circuit could`
           : `Bound slots to the standard ${circuitTopic} equation`,
       result.concept !== undefined
