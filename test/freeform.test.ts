@@ -35,7 +35,7 @@ describe("freeform questions (typed by the user, no answer key)", () => {
     }
   });
 
-  it("states an unsolvable question honestly instead of guessing", () => {
+  it("states an unsolvable question instead of guessing", () => {
     const brain = new FlyBrain(network);
     const rec = brain.solveFreeform("Why is the sky blue?");
     expect(rec.computedAnswer).toBeNull();

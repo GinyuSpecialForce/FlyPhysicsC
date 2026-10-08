@@ -135,7 +135,7 @@ describe("circular motion & universal gravitation unit", () => {
       "A kid gets on a carousel and sets a 250 g ball on the floor of the carousel. The ball is 3.0 m from the center and the carousel's period is 8.0 s. After the ride begins the kid releases the ball and sees it roll away from the center of the carousel. ";
     expect(
       brain.solveFreeform(carousel + "(a) Explain why the ball does this.").computedAnswer,
-    ).toBe("nothing pulls it inward — inertia carries it straight (no centripetal force)");
+    ).toBe("nothing pulls it inward; inertia carries it straight (no centripetal force)");
     const cw = (2 * Math.PI) / 8;
     near(
       brain.solveFreeform(carousel + "(b) Ignoring friction, what is the acceleration of the ball relative to the boy."),
@@ -177,7 +177,7 @@ describe("circular motion & universal gravitation unit", () => {
     expect(
       brain.solveFreeform(
         equator +
-          "(d) Physicists sometimes refer to centrifugal force as a fictitious force – explain what is really going on in this problem in terms of an inertial frame of reference and by referring to real forces and the property of inertia.",
+          "(d) Physicists sometimes refer to centrifugal force as a fictitious force – explain what is going on in this problem in terms of an inertial frame of reference and by referring to real forces and the property of inertia.",
       ).computedAnswer,
     ).toContain("only gravity and the normal force are real");
 
@@ -276,7 +276,7 @@ describe("circular motion & universal gravitation unit", () => {
       brain.solveFreeform(
         "(b) There is only one type of curve that involves constant acceleration – what is it and can a car perform such a curve?",
       ).computedAnswer,
-    ).toBe("parabola — not a circle");
+    ).toBe("parabola, not a circle");
     expect(
       brain.solveFreeform("(c) Explain why any circular curve will not be constant acceleration.").computedAnswer,
     ).toBe("a changes direction");

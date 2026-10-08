@@ -63,7 +63,7 @@ describe("equation sheet", () => {
     expect(dimOf("inductance")).toEqual([1, 2, -2, -2]);
   });
 
-  it("every declared default really is one of those constants", () => {
+  it("every declared default is one of those constants", () => {
     for (const { equation, entry } of FLAT_ENTRIES) {
       for (const [key, fallback] of Object.entries(entry.defaults ?? {})) {
         expect(Object.keys(FORM_CONSTANTS), `${equation.id}.${key}`).toContain(fallback);

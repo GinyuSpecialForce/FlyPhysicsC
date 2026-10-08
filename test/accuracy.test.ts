@@ -41,7 +41,7 @@ describe("eval accuracy gate", () => {
   const { network, evalAccuracies } = trainNetwork(1337, 6);
   const result = evaluate(network);
 
-  it("reports per-topic accuracy honestly", () => {
+  it("reports per-topic accuracy", () => {
     const lines = TOPIC_LIST.map((t: Topic) => {
       const p = result.perTopic[t];
       return `${t}: ${p.correct}/${p.total}`;

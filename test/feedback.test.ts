@@ -31,7 +31,7 @@ describe("feedback: the human tells the fly right/wrong and it learns", () => {
 
     brain.learn(CRATE, "energy", 0.5);
 
-    // the SGD step really moved the mushroom-body network
+    // the SGD step moved the mushroom-body network
     expect(network.forward(input).probs[energyIdx]).toBeGreaterThan(pBefore);
     // and the episodic recall now owns this phrasing
     const rec = brain.solveFreeform(CRATE);

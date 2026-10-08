@@ -16,7 +16,7 @@ function fakeStorage(seed: Record<string, string> = {}): KeyValueStore & { data:
   };
 }
 
-/** Storage that always throws on write, like a full quota in a real browser. */
+/** Storage that always throws on write, like a full quota in a browser. */
 const fullStorage: KeyValueStore = {
   getItem: () => null,
   setItem: () => {
@@ -134,7 +134,7 @@ describe("HiveSync — live upload, when someone configures an endpoint", () => 
   });
 
   it("has no endpoint in the shipped build", () => {
-    // nothing to configure until a store exists; the default must be honest
+    // nothing to configure until a store exists; the default must be safe
     expect(configuredEndpoint()).toBeNull();
   });
 

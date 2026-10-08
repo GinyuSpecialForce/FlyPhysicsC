@@ -119,11 +119,11 @@ describe("renderWork — the answer", () => {
     });
     const html = renderWork(rec);
     expect(html).toContain("work-head good"); // it did solve it
-    expect(html).not.toContain("actually this"); // but nothing was "right"
-    expect(html).not.toContain("but the problem is really");
+    expect(html).not.toContain("← correct"); // but nothing was "right"
+    expect(html).not.toContain("but it belongs under");
   });
 
-  it("fails honestly when the fly could not solve the question", () => {
+  it("fails clearly when the fly could not solve the question", () => {
     const rec = makeRecord({
       problem: { ...makeRecord().problem, answer: -1, origin: "user" },
       answerIndex: -1,
@@ -235,9 +235,9 @@ describe("renderWork — classification", () => {
   it("calls out a misclassification rather than hiding it", () => {
     const rec = makeRecord({ predicted: "energy", correctTopic: "newton" });
     const html = renderWork(rec);
-    expect(html).toContain("Classified as <b>energy</b>, but the problem is really <b>newton</b>");
+    expect(html).toContain("Classified as <b>energy</b>, but it belongs under <b>newton</b>");
     // the true topic is marked too, so the reader can see what it should have said
-    expect(html).toContain("← actually this");
+    expect(html).toContain("← correct");
   });
 
   it("does not adjudicate the topic on a question with no key", () => {
@@ -245,8 +245,8 @@ describe("renderWork — classification", () => {
       problem: { ...makeRecord().problem, answer: -1, origin: "user" },
     });
     const html = renderWork(rec);
-    expect(html).not.toContain("but the problem is really");
-    expect(html).not.toContain("actually this");
+    expect(html).not.toContain("but it belongs under");
+    expect(html).not.toContain("← correct");
   });
 });
 

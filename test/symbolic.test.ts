@@ -55,7 +55,7 @@ describe("symbolic evaluation", () => {
 
   it("keeps a tabulated constant symbolic in the text but resolves it in the value", () => {
     const sym = symbolicOf("m*g/r", { m: v("m"), r: v("r") })!;
-    // "g" is listed because that is genuinely how the answer is written…
+    // "g" is listed because that is how the answer is written…
     expect(symbolsOf(sym)).toEqual(["m", "g", "r"]);
     // …but the fly still knows what it is worth
     expect(materialize(sym, { m: 2, r: 4 })).toBeCloseTo(4.9, 10);
