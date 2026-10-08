@@ -3,12 +3,12 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Fly Physics C — a virtual fly brain that solves AP Physics</title>
+    <title>Fly Physics C: a virtual fly brain that solves AP Physics</title>
     <meta name="description" content="A fly-brain-inspired neural network that learned AP Physics C, visualized in 3D: watch it think." />
-    <script type="module" crossorigin src="/FlyPhysicsC/assets/index-DK78RMkC.js"></script>
+    <script type="module" crossorigin src="/FlyPhysicsC/assets/index-BfePoItS.js"></script>
     <link rel="modulepreload" crossorigin href="/FlyPhysicsC/assets/three-CQeoEM_O.js">
     <link rel="modulepreload" crossorigin href="/FlyPhysicsC/assets/postprocessing-CgR2qKEF.js">
-    <link rel="stylesheet" crossorigin href="/FlyPhysicsC/assets/index-JZZN9SKG.css">
+    <link rel="stylesheet" crossorigin href="/FlyPhysicsC/assets/index-_tGSYSUP.css">
   </head>
   <body>
     <div id="boot" class="boot-overlay">
@@ -52,13 +52,13 @@
             <button id="fbRight" class="primary">Right</button>
             <button id="fbWrong">Wrong</button>
             <div id="fbTeach" class="hidden">
-              <select id="fbTopic" aria-label="What the problem was really about"></select>
+              <select id="fbTopic" aria-label="What the problem was about"></select>
               <button id="fbTeachBtn" class="primary">Teach the fly</button>
             </div>
             <div id="fbStatus"></div>
           </div>
           <div id="freeformBox" class="hidden">
-            <textarea id="freeformInput" rows="3" placeholder="Type any AP Physics C question — e.g. A 3 kg ball moves at 8 m/s. What is its kinetic energy? You can also paste a screenshot of the problem." spellcheck="false"></textarea>
+            <textarea id="freeformInput" rows="3" placeholder="Type any AP Physics C question, e.g. A 3 kg ball moves at 8 m/s. What is its kinetic energy? You can also paste a screenshot of the problem." spellcheck="false"></textarea>
             <div class="freeform-row">
               <button id="solveBtn" class="primary">Give it to the fly</button>
               <button id="ocrPick" class="secondary" title="Or paste a screenshot straight into the box">Screenshot or photo</button>
@@ -70,7 +70,7 @@
             <div id="freeformExamples"></div>
           </div>
           <div class="desk-row">
-            <label class="inline realm-opt" title="Off by default — tick it and a graded answer sends the fly up to heaven or down to hell instead of just celebrating or slumping">
+            <label class="inline realm-opt" title="Off by default. Tick it and a graded answer sends the fly up to heaven or down to hell instead of just celebrating or slumping">
               <input type="checkbox" id="realmToggle" />
               Heaven &amp; hell
             </label>
@@ -129,7 +129,7 @@
       <section class="page">
         <h1>Training playground</h1>
         <p class="muted">
-          Train the fly's mushroom bodies right here. Seeded & deterministic —
+          Train the fly's mushroom bodies right here. Seeded and deterministic:
           the same seed always grows the same brain. The network classifies each
           problem into one of 12 topic families; symbolic motor circuits do the math.
         </p>
@@ -144,7 +144,7 @@
           <canvas id="accChart" width="880" height="220"></canvas>
         </div>
         <div class="panel">
-          <div class="panel-head"><span>Confusion — predicted vs actual (eval bank)</span></div>
+          <div class="panel-head"><span>Confusion: predicted vs actual (eval bank)</span></div>
           <div id="confusion"></div>
         </div>
         <div class="panel">
@@ -155,7 +155,7 @@
         <!-- The hive: teaches shared between every deployed copy of the fly -->
         <div class="panel" id="hivePanel">
           <div class="panel-head">
-            <span>The hive — what everyone has taught the fly</span>
+            <span>The hive: what everyone has taught the fly</span>
             <span class="badge" id="hiveCount">0 shared</span>
           </div>
           <p class="muted small">
@@ -191,8 +191,8 @@
       <section class="page">
         <h1>Lesion lab</h1>
         <p class="muted">
-          Knock out a brain region and watch accuracy collapse — in the chart below
-          <em>and</em> live on the desk in 3D (the lesion applies to the fly immediately).
+          Knock out a brain region and watch accuracy collapse in the chart below
+          and live on the desk in 3D (the lesion applies to the fly immediately).
         </p>
         <div id="lesionResults" class="lesion-grid"></div>
         <div class="panel">
@@ -208,7 +208,7 @@
     </main>
 
     <footer id="footer">
-      Built as a neuromorphic homage — real fly anatomy, honest hybrid AI.
+      Built as a neuromorphic homage: anatomically grounded, hybrid AI.
     </footer>
 
   </body>
