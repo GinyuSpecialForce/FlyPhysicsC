@@ -35,15 +35,26 @@ export class Timeline {
       const div = document.createElement("div");
       div.className = "stage-row";
       div.dataset.stage = r.id;
+      // R-32: the row is a real control, so it must be tab-reachable and
+      // operable with Enter/Space, not only clickable with a mouse.
+      div.tabIndex = 0;
+      div.setAttribute("role", "button");
       div.innerHTML = `<span class="stage-dot" style="background:${r.color}"></span>
         <span class="stage-name">${esc(r.label)}</span>
         <span class="stage-region">${esc(r.region)}</span>`;
-      div.addEventListener("click", () => {
-        // a row click is a toggle: the first click holds the show so the
-        // inspection sticks, the next click lets it run again
+      // activation is a toggle: the first holds the show so the inspection
+      // sticks, the next lets it run again
+      const activate = () => {
         this.setPaused(!this.isPaused());
         this.highlight(r.id);
         this.showDetail(r.id);
+      };
+      div.addEventListener("click", activate);
+      div.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          activate();
+        }
       });
       el.appendChild(div);
     }
@@ -62,7 +73,7 @@ export class Timeline {
     this.renderDetail(id);
     if (this.isPaused()) {
       byId("stageDetail").innerHTML +=
-        `<br><span class="muted">Show held — click a stage row again to let it run.</span>`;
+        `<br><span class="muted">Show held. Click a stage row again to let it run.</span>`;
     }
   }
 
@@ -72,7 +83,7 @@ export class Timeline {
     if (id === "reading") {
       const src = this.record?.source;
       if (!src) {
-        detail.innerHTML = `<b>Reading.</b> The optic lobe scans the page — tokenizing quantities and keywords.`;
+        detail.innerHTML = `<b>Reading.</b> The optic lobe scans the page, tokenizing quantities and keywords.`;
         return;
       }
       const pct = Math.round(src.confidence * 100);

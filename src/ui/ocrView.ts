@@ -59,7 +59,7 @@ export function initOcrView(opts: OcrViewOptions): void {
       <img class="ocr-thumb" src="${result.preview}" alt="the picture the fly read" />
       <div class="ocr-card-body">
         <div class="ocr-confidence ${confident ? "good" : "warn"}">
-          Read at ${pct}% confidence — ${confident ? "that looks clean" : "please check the reading"}
+          Read at ${pct}% confidence: ${confident ? "that looks clean" : "please check the reading"}
         </div>
         ${flags}${repairs}
         <div class="ocr-cta">Correct it above if needed, then give it to the fly.</div>
@@ -74,7 +74,7 @@ export function initOcrView(opts: OcrViewOptions): void {
     status("reading the page…");
     try {
       const result = await readImage(blob, (p) =>
-        status(`${p.stage} — ${Math.round(p.progress * 100)}%`),
+        status(`${p.stage}: ${Math.round(p.progress * 100)}%`),
       );
       showResult(result, fileName);
     } catch (err) {

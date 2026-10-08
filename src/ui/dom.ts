@@ -23,7 +23,7 @@ export function select(id: string): HTMLSelectElement {
  * `catch` binds *anything*, and `err instanceof Error` is a much narrower test
  * than it looks: an Error that crossed a realm boundary (a Web Worker posting
  * a rejection, or a structured clone) is a plain object here, and our OCR
- * engine rejects with bare strings. Swallowing those turns a real, reportable
+ * engine rejects with bare strings. Swallowing those turns a reportable
  * failure into a shrug, so every catch-all in the app routes through this.
  */
 export function describeError(err: unknown): string {

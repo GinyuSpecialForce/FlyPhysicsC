@@ -1,7 +1,7 @@
 /**
  * Innate keyword priors — the central complex's "instinct" layer. These add
  * topic logit bias on top of the mushroom bodies' learned output, the way
- * real circuits combine innate and learned pathways. Fragment → additive
+ * biological circuits combine innate and learned pathways. Fragment → additive
  * logit per topic.
  */
 import type { Topic } from "./features";

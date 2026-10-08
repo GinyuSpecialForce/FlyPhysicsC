@@ -88,7 +88,7 @@ export function solve(ctx: SolveCtx): SolveResult {
     return { value: 2 * Math.PI * Math.sqrt(masses[0] / k), unit: "s" };
   }
   // f = 1/T only when a time was actually given; otherwise the circuit
-  // genuinely can't bind this phrasing (no universal fallback garbage)
+  // can't bind this phrasing (no universal fallback garbage)
   return times.length ? { value: 1 / times[0], unit: "Hz" } : { value: NaN, unit: "Hz" };
 }
 

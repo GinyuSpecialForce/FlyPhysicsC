@@ -1,5 +1,5 @@
 /**
- * App orchestrator: boots (training one real network while the bar moves),
+ * App orchestrator: boots (training one network while the bar moves),
  * then runs the 3D desk demo — the Sequencer walks each problem through the
  * pipeline stages while the fly reads, thinks, and answers. View-specific UI
  * lives in ui/* modules; this file only wires them together.
@@ -107,7 +107,7 @@ async function boot(): Promise<void> {
     acc = decoded.evalAccuracy;
     setBoot(
       46,
-      `Restored the hive brain — ${decoded.teaches} shared ${decoded.teaches === 1 ? "teach" : "teaches"} already folded in, ${(acc * 100).toFixed(0)}% on the exam`,
+      `Restored the hive brain: ${decoded.teaches} shared ${decoded.teaches === 1 ? "teach" : "teaches"} already folded in, ${(acc * 100).toFixed(0)}% on the exam`,
     );
     await frame();
   } else {
@@ -127,7 +127,7 @@ async function boot(): Promise<void> {
       state = result.state;
       network = result.network;
       acc = result.finalEvalAccuracy;
-      setBoot(12 + (i + 1) * chunkShare, `Training on synthetic problem sets… epoch ${i + 1}/${chunks} — ${(acc * 100).toFixed(0)}% on the exam`);
+      setBoot(12 + (i + 1) * chunkShare, `Training on synthetic problem sets… epoch ${i + 1}/${chunks}: ${(acc * 100).toFixed(0)}% on the exam`);
       await frame();
     }
     brainMeta = { ...DEFAULT_TRAIN, evalAccuracy: acc };
@@ -156,7 +156,7 @@ async function boot(): Promise<void> {
   for (const entry of hiveEntries) feedbackMemory.record(entry.text, entry.topic);
   for (const id of store.loadLearned()) learnedProblems.add(id);
 
-  setBoot(96, `Brain ready — ${(acc * 100).toFixed(0)}% on the exam, ${hiveEntries.length} shared teaches`);
+  setBoot(96, `Brain ready: ${(acc * 100).toFixed(0)}% on the exam, ${hiveEntries.length} shared teaches`);
   await frame();
 
   startApp();
@@ -223,8 +223,7 @@ function schedulePush(): void {
   }, 2500);
 }
 
-/**
- * The one place a human verdict enters the fly: it takes the real SGD step and
+/**   * The one place a human verdict enters the fly: it takes the SGD step and
  * the episodic memory write (both inside FlyBrain.learn), and then records a
  * shareable version of the same teach into the hive.
  *
@@ -255,7 +254,7 @@ let lastAtlasStage = "";
 let hasActiveProblem = false;
 
 function loadProblems(): void {
-  // half eval bank (the real exam), half fresh synthetic for variety
+  // half eval bank (the held-out exam), half fresh synthetic for variety
   const shuffledEval = rng.shuffle(EVAL_BANK.slice());
   const synth = generateMix(TOPIC_LIST, 12, rng);
   problems = rng.shuffle([...shuffledEval.slice(0, 18), ...synth]);
@@ -310,7 +309,7 @@ function showWaiting(): void {
   hideFreeform();
   hideFeedback();
   sequencer.clear();
-  byId("probNum").textContent = "—";
+  byId("probNum").textContent = "–";
   byId("problemText").textContent = "The fly waits for a question.";
   byId("choices").innerHTML = "";
   const verdict = byId("verdict");
@@ -320,7 +319,7 @@ function showWaiting(): void {
   byId("timeline").innerHTML = "";
   byId("stageDetail").innerHTML = "";
   scene.setPaper(
-    "(no problem set — the fly grooms itself and waits)\n\nAsk the fly — type any AP Physics C question\nPractice problem — pull one from the set",
+    "(no problem set: the fly grooms itself and waits)\n\nAsk the fly: type any AP Physics C question\nPractice problem: pull one from the set",
     [],
     [],
   );
@@ -344,7 +343,7 @@ function startFreeform(): void {
     byId("probNum").textContent = record.problem.choices.length ? "(photo)" : "(typed)";
     byId("problemText").textContent = record.problem.text;
     // a photographed multiple-choice page keeps its options, so the fly can
-    // match its answer against them like a real exam question
+    // match its answer against them like an exam question
     const choicesEl = byId("choices");
     choicesEl.innerHTML = "";
     record.problem.choices.forEach((c, i) => {
@@ -362,8 +361,8 @@ function startFreeform(): void {
     scene.setFlyAnswer("");
     scene.setPaper(record.problem.text, record.problem.choices.map((c) => c.text), []);
   } catch (err) {
-    // report what actually broke — swallowing it as a shrug is how a real
-    // failure ends up looking like a mystery
+    // report what broke — swallowing it as a shrug is how a failure ends up
+    // looking like a mystery
     console.warn("[solve] freeform solve failed", err);
     const v = byId("verdict");
     v.textContent = describeError(err) || "The fly squints at the page.";
@@ -460,9 +459,20 @@ function buildAtlas(): void {
     const row = document.createElement("div");
     row.className = "legend-row";
     row.dataset.name = r.name;
+    // R-32: the legend row is a control, so it must be tab-reachable and
+    // operable with Enter/Space, not only clickable with a mouse.
+    row.tabIndex = 0;
+    row.setAttribute("role", "button");
     const dotColor = REGION_TONE[r.group] ?? "#8fb0ff";
     row.innerHTML = `<span class="legend-dot" style="background:${dotColor}"></span><span>${r.name}</span>`;
-    row.addEventListener("click", () => pickRegion(r.name));
+    const pick = () => pickRegion(r.name);
+    row.addEventListener("click", pick);
+    row.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        pick();
+      }
+    });
     legend.appendChild(row);
   }
   atlas.onPick((name) => showRegionInfo(name));
@@ -550,8 +560,7 @@ function wireUI(onLesionSelected: (type: LesionType) => void): void {
     exBox.appendChild(b);
   }
 
-  // feedback: the human confirms or corrects the fly's freeform answers,
-  // and the fly learns — episodic memory + a real SGD step
+  // feedback: the human confirms or corrects the fly's freeform answers,    // and the fly learns — episodic memory + an SGD step
   const fbTopic = select("fbTopic");
   fbTopic.innerHTML = TOPIC_LIST.map((t) => `<option value="${t}">${t}</option>`).join("");
   byId("fbRight").addEventListener("click", () => {
@@ -560,7 +569,7 @@ function wireUI(onLesionSelected: (type: LesionType) => void): void {
     // the human just said it got the problem right — up it goes, but only if
     // the heaven/hell checkbox is ticked; otherwise it just celebrates
     scene.fly.setState(realmsOn() ? "heaven" : "celebrate");
-    byId("fbStatus").textContent = `Reinforced and shared with the hive — ${hiveEntries.length} ${hiveEntries.length === 1 ? "teach" : "teaches"} so far.`;
+    byId("fbStatus").textContent = `Reinforced and shared with the hive: ${hiveEntries.length} ${hiveEntries.length === 1 ? "teach" : "teaches"} so far.`;
     byId("fbTeach").classList.add("hidden");
     (byId("fbRight") as HTMLButtonElement).disabled = true;
     (byId("fbWrong") as HTMLButtonElement).disabled = true;
@@ -568,7 +577,7 @@ function wireUI(onLesionSelected: (type: LesionType) => void): void {
   byId("fbWrong").addEventListener("click", () => {
     if (!lastFeedback) return;
     byId("fbTeach").classList.remove("hidden");
-    byId("fbStatus").textContent = "What was it really about?";
+    byId("fbStatus").textContent = "What was it about?";
   });
   byId("fbTeachBtn").addEventListener("click", () => {
     if (!lastFeedback) return;
@@ -577,7 +586,7 @@ function wireUI(onLesionSelected: (type: LesionType) => void): void {
     // the human just said it got the problem wrong — down it goes, but only if
     // the heaven/hell checkbox is ticked; otherwise it just slumps
     scene.fly.setState(realmsOn() ? "hell" : "slump");
-    byId("fbStatus").textContent = `Taught: this is a ${topic} problem, and shared with the hive (${hiveEntries.length} so far). Ask again — the fly remembers.`;
+    byId("fbStatus").textContent = `Taught: this is a ${topic} problem, and shared with the hive (${hiveEntries.length} so far). Ask again, the fly remembers.`;
     byId("fbTeach").classList.add("hidden");
     (byId("fbRight") as HTMLButtonElement).disabled = true;
     (byId("fbWrong") as HTMLButtonElement).disabled = true;
@@ -745,7 +754,7 @@ function startApp(): void {
     forget: () => {
       if (!confirm("Erase everything this device knows? Every teach you have given and all local learning will be gone.")) return;
       store.forget();
-      // a reload is the only honest reset: the network has already absorbed
+      // a reload is the only full reset: the network has already absorbed
       // these teaches into its weights, and only a fresh boot un-learns them
       location.reload();
     },

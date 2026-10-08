@@ -5,7 +5,7 @@
  *   1. an episodic memory: a phrasing similar to a taught one RECALLS the
  *      confirmed topic at classification time — the human's verdict is
  *      authoritative for problems it recognizes;
- *   2. callers pair this with a real SGD step on the mushroom-body network
+ *   2. callers pair this with an SGD step on the mushroom-body network
  *      (FlyBrain.learn), so unseen-but-similar phrasings drift the same way.
  */
 import type { Topic } from "./features";

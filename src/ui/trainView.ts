@@ -1,6 +1,6 @@
 /**
- * Training playground: trains ONE real network incrementally (the boot path
- * now shares this honest path), draws the live curve, and hands the trained
+ * Training playground: trains ONE network incrementally (the boot path
+ * now shares this path), draws the live curve, and hands the trained
  * network back to the app to hot-swap onto the desk fly.
  */
 import { trainNetwork, evaluate } from "../core/train";

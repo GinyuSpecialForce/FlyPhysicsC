@@ -87,7 +87,7 @@ export function buildFreeformProblem(
   opts: { ocr?: boolean } = {},
 ): FreeformProblem {
   const { text: clean } = normalizeMath(input, opts);
-  if (!clean) throw new Error("Type a question first — the fly can't read a blank page.");
+  if (!clean) throw new Error("Type a question first. The fly can't read a blank page.");
   const { stem, choices } = parseChoices(clean);
   const body = stem || clean;
   return {

@@ -1,6 +1,6 @@
 /**
  * Hand-written evaluation bank — problems NOT from the generators, used to
- * measure honest generalization. 4–5 per topic × 12 topics.
+ * measure held-out generalization. 4–5 per topic × 12 topics.
  */
 import type { Problem } from "./types";
 import type { Topic } from "./features";

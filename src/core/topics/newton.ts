@@ -63,7 +63,7 @@ export function solve(ctx: SolveCtx): SolveResult {
     return {
       value: NaN,
       unit: "concept",
-      concept: "only gravity and the normal force are real — inertia keeps you moving straight while the floor accelerates you inward",
+      concept: "only gravity and the normal force are real; inertia keeps you moving straight while the floor accelerates you inward",
     };
   }
   if (/turntable rotates θ|friction changes by 90/.test(t)) {

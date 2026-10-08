@@ -37,12 +37,23 @@ function renderCards(onLesionSelected: (type: LesionType) => void): void {
     card.className = "lesion-card";
     card.dataset.type = info.type;
     card.title = info.summary;
+    // R-32: a card is a control, so it must be tab-reachable and operable
+    // with Enter/Space, not only clickable with a mouse.
+    card.tabIndex = 0;
+    card.setAttribute("role", "button");
     const pct = (r.accuracy * 100).toFixed(0);
     card.innerHTML = `<div class="lbl">${esc(info.label)}</div>
       <div class="pct ${info.cardTone}">${pct}%</div>
       <div class="lesion-bar"><div class="${info.cardTone}" style="width:${pct}%"></div></div>
       <div class="summary">${esc(info.summary)}</div>`;
-    card.addEventListener("click", () => selectCard(info.type, onLesionSelected));
+    const select = () => selectCard(info.type, onLesionSelected);
+    card.addEventListener("click", select);
+    card.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        select();
+      }
+    });
     grid.appendChild(card);
   }
 }

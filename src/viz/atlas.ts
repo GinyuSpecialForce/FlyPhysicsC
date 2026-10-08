@@ -2,7 +2,7 @@
  * The Brain Atlas: a separate 3D view showing the anatomical fly CNS
  * (shared builder in flyBrain.ts), orbit-able, labeled, and clickable.
  * The same stage activations that drive the desk hologram drive this brain,
- * so you can watch real pipeline stages light up real neuropils.
+ * so you can watch pipeline stages light up neuropils.
  */
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
@@ -30,27 +30,27 @@ export interface BrainAtlas {
 
 /** Info-panel blurbs for the named neuropils. */
 const BLURBS: Record<string, string> = {
-  "Central brain": "The supraesophageal ganglion — the central mass that houses the learning and routing centers.",
+  "Central brain": "The supraesophageal ganglion, the central mass that houses the learning and routing centers.",
   Lamina: "First optic neuropil: ~800 parallel cartridges, one per visual column, right behind the eye.",
-  Medulla: "The largest optic neuropil — 40,000 neurons across ~10 layers processing motion and color.",
+  Medulla: "The largest optic neuropil: 40,000 neurons across ~10 layers processing motion and color.",
   Lobula: "Deep optic neuropil where wide-field motion and feature detection emerges.",
-  "Lobula plate": "Houses the giant tangential cells that compute optic flow — the fly's flight stabilizer.",
+  "Lobula plate": "Houses the giant tangential cells that compute optic flow, the fly's flight stabilizer.",
   Calyx: "The mushroom body's input cup: ~2,000 Kenyon cells receive olfactory and other sensory input here.",
   Peduncle: "The stalk of Kenyon-cell axons running from the calyx down to the lobes.",
-  "Vertical lobe (α/α′)": "One of the mushroom body output lobes — roles in short-term memory and aversive learning.",
+  "Vertical lobe (α/α′)": "One of the mushroom body output lobes, with roles in short-term memory and aversive learning.",
   "Medial lobe (β/β′)": "The horizontally-running output lobe, implicated in long-term memory.",
   "Gamma lobe": "The third lobe; its Kenyon cells undergo adult neurogenesis and handle early memories.",
-  "Protocerebral bridge": "The handlebar-shaped top of the central complex — a head-direction map.",
+  "Protocerebral bridge": "The handlebar-shaped top of the central complex: a head-direction map.",
   "Fan-shaped body": "The central complex's main hub: action selection, orientation, and sleep drive.",
-  "Ellipsoid body": "A ring neuropil tracking the fly's egocentric heading — its inner compass.",
+  "Ellipsoid body": "A ring neuropil tracking the fly's egocentric heading, its inner compass.",
   Nodulus: "Paired nodules at the bottom of the central complex, tied to angular velocity.",
   "Antennal lobe": "The olfactory hub: ~50 glomeruli per side where odor identity is first computed.",
-  "Antennal lobe glomeruli": "Spherical subunits, one per odorant receptor class — smell arrives pre-sorted.",
-  "Lateral horn": "Hard-wired olfactory output — innate attraction and avoidance lives here.",
+  "Antennal lobe glomeruli": "Spherical subunits, one per odorant receptor class: smell arrives pre-sorted.",
+  "Lateral horn": "Hard-wired olfactory output: innate attraction and avoidance lives here.",
   "Subesophageal zone (SEZ)": "Taste and feeding control center, gripping the esophagus.",
-  "Ventral nerve cord": "The spinal cord equivalent — carries motor commands down to the legs.",
+  "Ventral nerve cord": "The spinal cord equivalent, carrying motor commands down to the legs.",
   "Thoracic neuromeres": "Pro-, meso- and metathoracic segments, each wiring one pair of legs.",
-  "Leg motor pools": "Premotor circuits that drive each leg pair — where 'motor circuits' execute.",
+  "Leg motor pools": "Premotor circuits that drive each leg pair, where 'motor circuits' execute.",
 };
 
 const LABELS: Array<[string, [number, number, number]]> = [

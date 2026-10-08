@@ -5,7 +5,7 @@
  * humans, a machine `form` the dimensional solver can evaluate, and the unit
  * family of every variable. Inverse directions ("given a_c and r, find v") are
  * written out explicitly rather than derived by symbolic algebra, so the
- * numbers are predictable and the citations are honest.
+ * numbers are predictable and the citations are traceable.
  *
  * Three things read this file: the Reference tab (rendering), the citations the
  * thought timeline shows after a circuit solves something, and the dimensional

@@ -179,35 +179,35 @@ export function solve(ctx: SolveCtx): {
     return {
       value: NaN,
       unit: "concept",
-      concept: "sideways (tangential) speed — orbiting is free fall with enough horizontal velocity",
+      concept: "sideways (tangential) speed: orbiting is free fall with enough horizontal velocity",
     };
   }
   if (/direction should .*rockets fire|leave orbit and return/.test(t)) {
     return {
       value: NaN,
       unit: "concept",
-      concept: "retrograde — fire against the motion to lose speed and descend",
+      concept: "retrograde: fire against the motion to lose speed and descend",
     };
   }
   if (/floats? about|why (?:does|do) .*float|astronaut floats|weightless/.test(t)) {
     return {
       value: NaN,
       unit: "concept",
-      concept: "free fall — the shuttle and astronaut fall together (normal force ≈ 0)",
+      concept: "free fall: the shuttle and astronaut fall together (normal force ≈ 0)",
     };
   }
   if (/possible for the moon to (?:continue )?orbit|moon to continue orbiting/.test(t)) {
     return {
       value: NaN,
       unit: "concept",
-      concept: "the sun's pull is nearly uniform on Earth and Moon — only its difference (tides) matters",
+      concept: "the sun's pull is nearly uniform on Earth and Moon; only its difference (tides) matters",
     };
   }
   if (/bench press this mass|just like he did/.test(t)) {
     return {
       value: NaN,
       unit: "concept",
-      concept: "No — same weight, but the mass (inertia) is far greater",
+      concept: "No: same weight, but the mass (inertia) is far greater",
     };
   }
   if (/how these values can be so close|although mars is much larger/.test(t)) {
@@ -221,7 +221,7 @@ export function solve(ctx: SolveCtx): {
     return {
       value: NaN,
       unit: "concept",
-      concept: "g = g⊕·(r/R⊕) — grows linearly to the surface",
+      concept: "g = g⊕·(r/R⊕), grows linearly to the surface",
     };
   }
   if (/determine the slope|find the slope|what is the slope/.test(t)) {

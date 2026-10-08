@@ -53,6 +53,22 @@ button, input, select, textarea {
   outline: none;
 }
 
+/* R-32: every interactive element needs a clearly visible keyboard focus
+   indicator. The blanket outline:none above is replaced by this deliberate,
+   high-contrast ring on :focus-visible (keyboard focus only, not mouse). */
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+a:focus-visible,
+[tabindex]:focus-visible,
+.stage-row:focus-visible,
+.lesion-card:focus-visible,
+.legend-row:focus-visible {
+  outline: 2px solid var(--accent-hi);
+  outline-offset: 2px;
+}
+
 /* flat button system: primary = accent fill + dark text, secondary = raised */
 button {
   background: var(--raise);
@@ -287,6 +303,9 @@ button:disabled {
 .ref-eq { display: block; color: var(--text); }
 .ref-vars { font-size: 10.5px; color: var(--muted); }
 .ref-dim { opacity: 0.6; }
+/* R-03: wide reference tables stay inside their container on small screens;
+   the page never gains horizontal overflow, the table scrolls within this box. */
+.table-scroll { max-width: 100%; overflow-x: auto; }
 .ref-table { width: 100%; border-collapse: collapse; font-size: 12px; }
 .ref-table th {
   color: var(--accent);

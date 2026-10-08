@@ -453,7 +453,7 @@ export function citeEquation(
  * Matches a question against each equation's aliases and its display.
  */
 export function equationForConcept(question: string, circuitTopic: Topic): Citation | undefined {
-  // only answer when the question really is asking which formula to use
+  // only answer when the question is asking which formula to use
   if (!/\b(which|what) (equation|formula|relation|expression)\b|\bwhat do i use\b/.test(question.toLowerCase())) {
     return undefined;
   }

@@ -27,7 +27,7 @@ export interface BrainSnapshot {
   samples: number;
   nIn: number;
   nOut: number;
-  /** honest accuracy on the hand-written eval bank at build time */
+  /** held-out accuracy on the hand-written eval bank at build time */
   evalAccuracy: number;
   /** number of shared teaches folded into these weights */
   teaches: number;

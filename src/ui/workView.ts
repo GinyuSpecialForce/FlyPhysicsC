@@ -82,7 +82,7 @@ function givensHtml(rec: ThoughtRecord): string {
 }
 
 function topicHtml(rec: ThoughtRecord): string {
-  // the classifier's full 12-way output, sorted — where the mass actually went
+  // the classifier's full 12-way output, sorted — where the mass went
   const ranked = TOPIC_LIST.map((t) => [t, rec.topicProbs[t] ?? 0] as const).sort((a, b) => b[1] - a[1]);
   const rows = ranked
     .map(([t, p]) => {
@@ -100,7 +100,7 @@ function topicHtml(rec: ThoughtRecord): string {
             : truth
               ? "good"
               : "accent";
-      const mark = predicted ? (truth ? " ← predicted" : " ← predicted") : truth ? " ← actually this" : "";
+      const mark = predicted ? (truth ? " ← predicted" : " ← predicted") : truth ? " ← correct" : "";
       return `<div class="topic-row">
         <span class="topic-name">${esc(t)}</span>
         <div class="topic-bar"><div class="${tone}" style="width:${pct}%"></div></div>
@@ -110,7 +110,7 @@ function topicHtml(rec: ThoughtRecord): string {
     })
     .join("");
   const head = isGraded(rec) && rec.predicted !== rec.correctTopic
-    ? `<p class="work-flag">Classified as <b>${esc(rec.predicted)}</b>, but the problem is really <b>${esc(rec.correctTopic)}</b>.</p>`
+    ? `<p class="work-flag">Classified as <b>${esc(rec.predicted)}</b>, but it belongs under <b>${esc(rec.correctTopic)}</b>.</p>`
     : "";
   return `<section class="work-sec"><h3>How it classified the problem</h3>${head}
     <div class="work-topics">${rows}</div>
@@ -138,8 +138,7 @@ function traceHtml(rec: ThoughtRecord): string {
 }
 
 /**
- * The whole trace as one HTML string. Pure: everything here is read off the
- * record, so the sheet can never disagree with what the fly actually did.
+ * The whole trace as one HTML string. Pure: everything here is read off the  * record, so the sheet can never disagree with what the fly did.
  */
 export function renderWork(rec: ThoughtRecord): string {
   return [

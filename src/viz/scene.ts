@@ -266,7 +266,7 @@ const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, preser
     ctx.fillStyle = "#3a3630";
     ctx.font = "italic 24px Hack, monospace";
     ctx.textAlign = "center";
-    ctx.fillText("AP Physics C — Problem Set 7", 512, 60);
+    ctx.fillText("AP Physics C: Problem Set 7", 512, 60);
     ctx.textAlign = "left";
     ctx.font = "26px Hack, monospace";
     const words = text.split(/\s+/);

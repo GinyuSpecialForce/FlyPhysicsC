@@ -1,6 +1,6 @@
 /**
  * Training + evaluation. Trains the network on synthetic problems, then
- * measures honest accuracy on the hand-written eval bank. Also provides
+ * measures held-out accuracy on the hand-written eval bank. Also provides
  * per-lesion evaluation for the lesion lab.
  */
 import { FlyBrain } from "./brain";
@@ -44,7 +44,7 @@ export interface TrainOptions {
   lr?: number;
   /**
    * Called after every epoch with (epoch index, mean loss, eval accuracy).
-   * Lets the UI train one real network incrementally instead of throwing
+   * Lets the UI train one network incrementally instead of throwing
    * epochs away.
    */
   onEpoch?: (epoch: number, loss: number, evalAccuracy: number) => void;

@@ -53,7 +53,7 @@ export class FlyBrain {
 
   /**
    * Teach the fly: this phrasing is a `topic` problem. Writes to the episodic
-   * feedback memory AND takes a real SGD step on the mushroom-body network,
+   * feedback memory AND takes an SGD step on the mushroom-body network,
    * so similar phrasings the user never showed route the same way. Pass a
    * negative-ish picture by teaching the topic it SHOULD have been.
    */
@@ -122,7 +122,7 @@ export class FlyBrain {
         id: "classify",
         label: STAGES[1].label,
         region: STAGES[1].region,
-        summary: "Lesioned — flat guesses",
+        summary: "Lesioned: flat guesses",
         details: ["Mushroom bodies ablated: topic guess is chance (1/12 ≈ 8%)"],
         activation: 0.1,
       });
@@ -158,7 +158,7 @@ export class FlyBrain {
         id: "route",
         label: STAGES[2].label,
         region: STAGES[2].region,
-        summary: `Lesioned — random circuit: ${circuitTopic}`,
+        summary: `Lesioned, random circuit: ${circuitTopic}`,
         details: ["Fan-shaped body scrambled: routing is random"],
         activation: 0.2,
       });
@@ -179,7 +179,7 @@ export class FlyBrain {
         id: "compute",
         label: STAGES[3].label,
         region: STAGES[3].region,
-        summary: "Leg circuits lesioned — scribbles instead of math",
+        summary: "Leg circuits lesioned: scribbles instead of math",
         details: ["Motor program ran but produced garbage"],
         activation: 0.15,
       });
@@ -187,7 +187,7 @@ export class FlyBrain {
         id: "answer",
         label: STAGES[4].label,
         region: STAGES[4].region,
-        summary: problem.origin === "user" ? "No coherent answer — leg circuits lesioned" : "No coherent answer",
+        summary: problem.origin === "user" ? "No coherent answer: leg circuits lesioned" : "No coherent answer",
         details: ["The fly draws a small spiral on the paper instead."],
         activation: 0.2,
       });
@@ -301,7 +301,7 @@ export class FlyBrain {
       }
     }
     // "in terms of m and v" wants the EXPRESSION, so a circuit that happily
-    // computed a number has not really answered the question — go back to the
+    // computed a number has not answered the question — go back to the
     // sheet with symbols in play. The number is still reported alongside it.
     if (!cAnswer && wantSymbolic && result.concept === undefined && rescued?.symbolic === undefined) {
       const symbolicRescue = rescueSolve({ ...rescueOpts, wantSymbolic: true });
@@ -340,11 +340,11 @@ export class FlyBrain {
     const cited = suppliedConstants(problem.text);
     const computeDetails: string[] = [
       cAnswer
-        ? `Read off the constants table: ${cAnswer.primary.display} — ${cAnswer.how}`
+        ? `Read off the constants table: ${cAnswer.primary.display} (${cAnswer.how})`
         : textbook
           ? `Recognized a standard setup: ${textbook.equation}`
           : circuitTopic !== routedTopic
-          ? `Rerouted: the ${routedTopic} circuit couldn't bind this phrasing — the ${circuitTopic} circuit could`
+          ? `Rerouted: the ${routedTopic} circuit couldn't bind this phrasing, but the ${circuitTopic} circuit could`
           : `Bound slots to the standard ${circuitTopic} equation`,
       result.concept !== undefined
         ? `Conceptual answer: ${result.concept}`
@@ -352,7 +352,7 @@ export class FlyBrain {
     ];
     if (rescued) {
       computeDetails.unshift(
-        `No circuit covered this — solved dimensionally from ${rescued.section}: ${rescued.display}`,
+        `No circuit covered this. Solved dimensionally from ${rescued.section}: ${rescued.display}`,
       );
       const sub = Object.entries(rescued.bindings)
         .map(([k, v]) => `${k} = ${fmt(v)}`)
@@ -404,7 +404,7 @@ export class FlyBrain {
       : null;
     // both ways at once when the symbols happen to be known: "mv²/r — 10.7 N"
     const bothWays =
-      symbolicAnswer && numericText ? `${symbolicAnswer.expression} — ${numericText} for the given values` : undefined;
+      symbolicAnswer && numericText ? `${symbolicAnswer.expression}: ${numericText} for the given values` : undefined;
     traces.push({
       id: "answer",
       label: STAGES[4].label,
@@ -414,12 +414,12 @@ export class FlyBrain {
           ? `Answer: ${bothWays ?? computedAnswer}`
           : "The fly couldn't quite solve this one"
         : correct
-          ? `Choice ${letter(answerIndex)} — correct`
-          : `Choice ${answerIndex >= 0 ? letter(answerIndex) : "—"} — expected ${letter(problem.answer)}`,
+          ? `Choice ${letter(answerIndex)}: correct`
+          : `Choice ${answerIndex >= 0 ? letter(answerIndex) : "–"}: expected ${letter(problem.answer)}`,
       details: freeform
         ? [
             solved
-              ? "Penciled onto the paper — no answer key to grade against"
+              ? "Penciled onto the paper, no answer key to grade against"
               : "No circuit produced a value for this phrasing",
             ...(symbolicAnswer
               ? [
@@ -437,7 +437,7 @@ export class FlyBrain {
     });
     if (lesioned) {
       traces[traces.length - 1].details.push(
-        `Lesioned: ${this.lesion.type} — this answer reflects the damaged brain.`,
+        `Lesioned: ${this.lesion.type}. This answer reflects the damaged brain.`,
       );
     }
 
@@ -572,7 +572,7 @@ function pct(x: number): string {
 }
 
 function letter(i: number): string {
-  return i >= 0 && i < 5 ? "ABCDE"[i] : "—";
+  return i >= 0 && i < 5 ? "ABCDE"[i] : "–";
 }
 
 /** Find the choice whose value best matches the computed value (scale-aware). */
@@ -607,7 +607,7 @@ function pickChoice(
       best = i;
     }
   });
-  // only accept genuinely close matches
+  // only accept close matches
   return bestScore < 0.02 ? best : -1;
 }
 
@@ -640,7 +640,7 @@ function wantsSymbolicQuestion(text: string): boolean {
 
 /**
  * Awkward, mutually distinct values for probing. When two expressions look
- * different but might mean the same thing, the only honest way to find out is
+ * different but might mean the same thing, the only way to find out is
  * to evaluate both at numbers where an accidental agreement is implausible.
  */
 const PROBES = [2.31, 5.7, 1.13, 8.29, 3.77, 6.05, 1.91, 4.43, 7.19, 2.87];

@@ -54,8 +54,8 @@ function constantsHtml(): string {
         )
         .join("");
       return `<div class="panel"><div class="panel-head"><span>${esc(GROUP_TITLES[group])}</span></div>
-        <table class="ref-table"><thead><tr><th>Symbol</th><th>Quantity</th><th>Value</th><th>How it is obtained</th></tr></thead>
-        <tbody>${items}</tbody></table></div>`;
+        <div class="table-scroll"><table class="ref-table"><thead><tr><th>Symbol</th><th>Quantity</th><th>Value</th><th>How it is obtained</th></tr></thead>
+        <tbody>${items}</tbody></table></div></div>`;
     })
     .join("");
 }
@@ -64,7 +64,7 @@ export function renderReference(): void {
   byId("referenceContent").innerHTML = `
     <h1>Reference</h1>
     <p class="muted">The two sheets this app actually runs on. Every answer the fly gives
-    names the equation it used from here, and every number it cites comes from the table below —
+    names the equation it used from here, and every number it cites comes from the table below;
     the fly reads the same pages you do.</p>
     <h2>The AP Physics C equation sheet</h2>
     ${equationsHtml()}

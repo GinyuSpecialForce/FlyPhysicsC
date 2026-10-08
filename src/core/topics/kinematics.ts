@@ -99,7 +99,7 @@ export function solve(ctx: SolveCtx): SolveResult {
     return { value: NaN, unit: "concept", concept: "direction changes → velocity changes" };
   }
   if (/one type of curve.*constant acceleration|constant acceleration.*one type of curve/.test(t)) {
-    return { value: NaN, unit: "concept", concept: "parabola — not a circle" };
+    return { value: NaN, unit: "concept", concept: "parabola, not a circle" };
   }
   if (/circular curve.*not constant acceleration|why.*circular.*not.*constant/.test(t)) {
     return { value: NaN, unit: "concept", concept: "a changes direction" };
@@ -115,7 +115,7 @@ export function solve(ctx: SolveCtx): SolveResult {
     return {
       value: NaN,
       unit: "concept",
-      concept: "nothing pulls it inward — inertia carries it straight (no centripetal force)",
+      concept: "nothing pulls it inward; inertia carries it straight (no centripetal force)",
     };
   }
   // the curve-time relation as a formula, when asked to derive it

@@ -1,7 +1,7 @@
 /**
  * The pluggable transport for live hive sync.
  *
- * The site ships with NO endpoint configured, and that is the honest default:
+ * The site ships with NO endpoint configured, and that is the intended default:
  * it is a static bundle on GitHub Pages with no server and no database, so
  * "upload" cannot mean anything until someone points it at a store. Set
  * VITE_HIVE_ENDPOINT (a Cloudflare Worker, a Supabase edge function, a tiny
@@ -113,7 +113,7 @@ export class HiveSync {
   constructor(private opts: HiveSyncOptions) {
     this.state = {
       status: opts.transport ? "idle" : "off",
-      message: opts.transport ? "Not synced yet." : "No hive endpoint configured — teaches stay on this device.",
+      message: opts.transport ? "Not synced yet." : "No hive endpoint configured. Teaches stay on this device.",
       lastSyncedAt: null,
       pushed: 0,
       received: 0,
@@ -148,8 +148,8 @@ export class HiveSync {
       this.patch({
         status: "ok",
         message: remote.length
-          ? `Synced — ${remote.length} shared ${remote.length === 1 ? "teach" : "teaches"} received.`
-          : "Synced — already up to date.",
+          ? `Synced: ${remote.length} shared ${remote.length === 1 ? "teach" : "teaches"} received.`
+          : "Synced, already up to date.",
         lastSyncedAt: (this.opts.now?.() ?? new Date()).toISOString(),
         received: this.state.received + remote.length,
       });
@@ -157,7 +157,7 @@ export class HiveSync {
     } catch (err) {
       this.patch({
         status: "error",
-        message: `Hive unreachable (${describeSyncError(err)}) — keeps working offline.`,
+        message: `Hive unreachable (${describeSyncError(err)}), but it keeps working offline.`,
       });
       return [...local];
     }

@@ -455,7 +455,7 @@ export function suppliedConstants(text: string): SuppliedConstant[] {
     push(`R_${world}`, label);
     push(surfaceGravityId(world), label);
   }
-  if (/earth|surface|weight|weigh/.test(t)) push("g_std", "no acceleration given — standard gravity");
+  if (/earth|surface|weight|weigh/.test(t)) push("g_std", "no acceleration given, standard gravity");
   // keep the trace short: a named body outranks a generic g
   if (
     /\borbit|satellit|kepler|gravit|escape velocity|period of the (?:orbit|year)|revolut|weighs? on|weight on (?:the )?(?:moon|mars|planet|jupiter)/.test(

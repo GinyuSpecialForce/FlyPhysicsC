@@ -7,7 +7,7 @@
  * HTML has to be assertable without a document.
  *
  * The queue listing is deliberately verbatim. Sharing is on by default here,
- * and "on by default" is only honest if a visitor can read exactly what is
+ * and "on by default" is only fair if a visitor can read exactly what is
  * leaving their machine before it does.
  */
 import { KEYWORDS, TOPIC_LIST, unitFamilyName } from "../core/features";
@@ -44,7 +44,7 @@ export function entryKeywords(entry: HiveEntry): string[] {
  */
 export function renderHiveQueue(entries: readonly HiveEntry[], limit = 10): string {
   if (entries.length === 0) {
-    return `<p class="muted small">Nothing taught yet. Ask the fly a question, then tell it whether it was right — or what the problem really was.</p>`;
+    return `<p class="muted small">Nothing taught yet. Ask the fly a question, then tell it whether it was right, or what the problem was.</p>`;
   }
   const recent = entries.slice(-limit).reverse();
   const rows = recent
@@ -62,7 +62,7 @@ export function renderHiveQueue(entries: readonly HiveEntry[], limit = 10): stri
         `<li class="hive-row">` +
         `<span class="hive-topic">${esc(e.topic)}</span>` +
         `<span class="hive-text">${esc(e.text || "(empty phrasing)")}</span>` +
-        `<span class="hive-signal">${VERDICT_NOTE[e.verdict] ?? e.verdict}${votes}${signals ? ` — ${signals}` : ""}</span>` +
+        `<span class="hive-signal">${VERDICT_NOTE[e.verdict] ?? e.verdict}${votes}${signals ? `: ${signals}` : ""}</span>` +
         `</li>`
       );
     })
@@ -89,14 +89,14 @@ export function renderHiveTopics(stats: CorpusStats): string {
   return `<div class="hive-bars">${rows}</div>`;
 }
 
-/** One honest sentence about what is and isn't being shared. */
+/** One plain sentence about what is and isn't being shared. */
 export function renderHiveNotice(stats: CorpusStats, status: SyncState, persistent: boolean): string {
   const share = stats.entries
     ? `${stats.entries} ${stats.entries === 1 ? "teach" : "teaches"} from this device${stats.votes > stats.entries ? ` (${stats.votes} ${stats.votes === 1 ? "vote" : "votes"})` : ""}`
     : "no teaches yet";
   const memory = persistent ? "Saved on this device, so a reload keeps them." : "This browser is blocking local storage, so these will be lost on reload.";
   if (status.status === "off") {
-    return `${share}. ${memory} No hive endpoint is configured, so nothing is being uploaded — set VITE_HIVE_ENDPOINT to go live.`;
+    return `${share}. ${memory} No hive endpoint is configured, so nothing is being uploaded. Set VITE_HIVE_ENDPOINT to go live.`;
   }
   return `${share}. ${memory} ${status.message}`;
 }

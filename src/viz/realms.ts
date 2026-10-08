@@ -157,7 +157,7 @@ export function createRealms(): Realms {
     hell.add(spike);
   }
 
-  // colors above 1.0 so the bloom pass picks them up as genuinely glowing
+  // colors above 1.0 so the bloom pass picks them up as glowing
   const lavaMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(0xff5a1f).multiplyScalar(2.2) });
   const lava = new THREE.Mesh(new THREE.CircleGeometry(0.66, 24), lavaMat);
   lava.rotation.x = -Math.PI / 2;

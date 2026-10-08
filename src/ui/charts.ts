@@ -61,7 +61,7 @@ export function drawAccChart(losses: number[], accs: number[]): void {
     ctx.stroke();
   }
   ctx.fillStyle = "#94949e";
-  ctx.fillText("— accuracy (solid) · loss (scaled, grey)", 46, 16);
+  ctx.fillText("accuracy (solid) · loss (scaled, grey)", 46, 16);
 }
 
 export function renderConfusion(records: ThoughtRecord[]): void {

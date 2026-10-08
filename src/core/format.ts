@@ -4,7 +4,7 @@
  * and circuit outputs both rely on this.
  */
 export function fmt(x: number, sig = 3): string {
-  if (!Number.isFinite(x)) return "—";
+  if (!Number.isFinite(x)) return "–";
   if (x === 0) return "0";
   const abs = Math.abs(x);
   if (abs >= 1e5 || abs < 1e-2) {
