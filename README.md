@@ -2,7 +2,7 @@
 
 # Fly Physics C
 
-**A virtual fly brain that learned AP Physics C — watch it think, in 3D.**
+**A virtual fly brain that learned AP Physics C. Watch it think, in 3D.**
 
 A fly sits at a desk, waiting for you to hand it a question. Above it
 floats a holographic brain:
@@ -10,7 +10,7 @@ its optic lobe tokenizes the problem, its mushroom bodies classify the topic,
 its central complex routes to a symbolic solver circuit, and its legs do the math.
 When it's right, it flies up to heaven, off one end of the desk. When it's
 wrong, it's dragged off the other end and punished in hell. Both are opt-in:
-tick the **Heaven & hell** checkbox on the desk and the realms appear — leave
+tick the **Heaven & hell** checkbox on the desk and the realms appear; leave
 it unticked and the fly just celebrates or slumps where it sits.
 
 **Eval accuracy: 60 / 60 hand-written problems (100%) · chance = 20%**
@@ -24,11 +24,11 @@ it unticked and the fly just celebrates or slumps where it sits.
 ## What is this?
 
 A fly, unfortunately, cannot not do physics. This is a **neuromorphic homage**: a tiny neural
-network shaped by real fly neuroanatomy does the pattern-recognition half of
-problem solving, and hand-built symbolic "motor circuits" do the algebra —
+network shaped by fly neuroanatomy does the pattern-recognition half of
+problem solving, and hand-built symbolic "motor circuits" do the algebra,
 the same division of labor as a brain plus a calculator.
 
-| Fly region | Real job | Here |
+| Fly region | Role | Here |
 |---|---|---|
 | **Optic lobe** (lamina → medulla → lobula) | motion & form vision | tokenizes quantities + units (`5 kg`, `30°`, `2.4 m/s²`) and physics keywords |
 | **Mushroom bodies** (Kenyon cells) | learning, sparse codes | a 24-unit network classifies each problem into 12 topic families |
@@ -38,25 +38,25 @@ the same division of labor as a brain plus a calculator.
 The site trains in your browser in about a second, scores itself on
 **60 hand-written problems it has never seen**, shows every mistake in a
 confusion matrix, and lets you **lesion brain regions** to watch accuracy
-collapse — live, in the 3D scene.
+collapse, live, in the 3D scene.
 
 ## Ask the fly anything
 
-Click **Ask the fly** on the desk and type *any* AP Physics C question —
+Click **Ask the fly** on the desk and type *any* AP Physics C question,
 no answer key needed. The fly tokenizes it, classifies the topic, routes to
 a solver circuit, and pencils its computed answer onto the paper
 (e.g. `Answer: 96 J`). It holds the answer until you advance, never counts toward
-its score, and lesions apply to your question too — a lesioned fly gives
-you a damaged answer, honestly. After each answer the fly asks **Was the
-fly right?** — say *Wrong*, name the topic it was really about, and the fly
+its score, and lesions apply to your question too: a lesioned fly gives
+you a damaged answer. After each answer the fly asks **Was the
+fly right?** Say *Wrong*, name the topic it was about, and the fly
 learns: an episodic memory recalls your verdict on similar phrasings and a
-real SGD step reshapes its mushroom-body network. Graded practice problems
+an SGD step reshapes its mushroom-body network. Graded practice problems
 teach it automatically from their answer key.
 
 Or **paste a screenshot** of the problem straight into the box (or drop or
 pick a file). The fly reads it in your browser, repairs the math OCR gets
-wrong, and shows you what it read — with a confidence score and the specific
-numbers it was unsure about — before it solves anything.
+wrong, and shows you what it read (with a confidence score and the specific
+numbers it was unsure about) before it solves anything.
 
 ## Answering in terms of variables
 
@@ -87,47 +87,46 @@ solvers: `materialize()` folds to a number exactly when every leaf resolves.
   that canonical treats as different are compared numerically under awkward
   probe values, but only when both sides mention exactly the same variables.
 - **Ordinary questions are untouched.** The numeric path, the circuits, and
-  the accuracy gates behave exactly as before — symbolic engages only when the
+  the accuracy gates behave exactly as before; symbolic engages only when the
   question asks for it.
 
 ## Reading the fly's work
 
-The thought timeline is for *watching* — one stage at a time, and the detail
+The thought timeline is for *watching*: one stage at a time, and the detail
 card is overwritten as the show moves on. When the fly has an answer, **Show
 the fly's work** (or press `W`) opens the whole trace on one sheet: the
 quantities it pulled off the page, the classifier's full 12-way distribution,
 the circuit that actually ran, and every equation, substitution and runner-up
 it considered, in order.
 
-The sheet renders the `ThoughtRecord` the pipeline already produced — nothing
-in it is recomputed, so it cannot disagree with what the fly really did. That
-makes it the honest place to see the awkward parts: a question classified as
-`kinematics` that is really `circuits`, a circuit that had to be rerouted
+The sheet renders the `ThoughtRecord` the pipeline already produced; nothing
+in it is recomputed, so it cannot disagree with what the fly did. That
+makes it the place to see the awkward parts: a question classified as
+`kinematics` that belongs under `circuits`, a circuit that had to be rerouted
 because it couldn't bind the phrasing, or the equation the dimensional rescue
 picked and the two it passed over.
 
-It stays honest about grading too. A question you handed the fly has no answer
-key, so the sheet never claims the fly was right or wrong — it prints what it
+It is equally careful about grading too. A question you handed the fly has no answer
+key, so the sheet never claims the fly was right or wrong; it prints what it
 computed and marks its classification neutrally instead of as a mistake.
 
 ## Teaching the fly
 
-When you tell the fly it got one of your questions wrong — or correct it, "this is
-really `shm`" — two things happen. It writes an **episodic memory**, so a similar
+When you tell the fly it got one of your questions wrong, or correct it ("this is `shm`"), two things happen. It writes an **episodic memory**, so a similar
 phrasing asked later recalls *your* verdict and overrides the classifier. And it
 joins a **corpus**: a small, shareable record of the teach that other people's
 flies can learn from.
 
 **What leaves your device is narrower than what you typed.** Numbers and named
 constants are stripped from the wording, and the physics *values* stay only as
-features inside the vector the fly learns from — so `2.0 m` becomes `length`, and
+features inside the vector the fly learns from, so `2.0 m` becomes `length`, and
 the raw digits do not travel. What does travel is the phrasing itself, unchanged.
 The Training tab lists the exact queue, and **Forget this device** erases it.
 
 **The corpus is shared, never the weights.** Gradient steps don't compose:
 averaging ten people's `w0`/`w1` is unsound, and replaying the same steps in
 different orders gives ten different brains. So every client replays one
-canonically-ordered corpus and lands on identical weights — that is what makes
+canonically-ordered corpus and lands on identical weights; that is what makes
 "the fly remembers on any computer" a fact rather than a hope. A pre-trained
 weight snapshot ships with the build as a fast start (13.7 KB for all 2,604
 weights), and it records which corpus entries are already baked in so a client
@@ -136,7 +135,7 @@ replays only what is new to it.
 Merging is a union with vote counting, keyed on *(phrasing, topic)* and attributed
 to an anonymous per-browser install id. So merging is idempotent (re-importing
 the same file, or a retried upload, adds no new voice), order-independent, and
-loses nothing — there is no coordinator and no conflict to resolve. Ten people
+loses nothing; there is no coordinator and no conflict to resolve. Ten people
 teaching the same phrasing is ten votes, weighted but capped.
 
 **Out of the box there is no server.** This is a static bundle, so a teach is
@@ -156,7 +155,7 @@ snapshot is present (first run, offline, or one built for a different feature
 layout) the app falls back to training in the browser exactly as it always has.
 
 **To turn on live upload**, set `VITE_HIVE_ENDPOINT` to anything that answers
-`GET` and `POST` — a Cloudflare Worker with KV, a Supabase edge function, a tiny
+`GET` and `POST`: a Cloudflare Worker with KV, a Supabase edge function, a tiny
 proxy:
 
 ```bash
@@ -164,7 +163,7 @@ echo 'VITE_HIVE_ENDPOINT=https://my-hive.example.workers.dev' > .env.local
 ```
 
 Then teches push in batches and pulls are merged on boot. Nothing changes in the
-UI, and with the variable unset every path is a silent no-op — the panel says so
+UI, and with the variable unset every path is a silent no-op; the panel says so
 rather than pretending. **A public write endpoint needs rate limiting and payload
 caps server-side**; the client batches and caps, but that is not a substitute.
 
@@ -179,8 +178,8 @@ The fly solves from the same two pages you get on the exam, kept as data in
 tab, so they can never drift apart:
 
 - **Every answer names its equation.** `F_c = mv²/r · Circular motion and
-  rotation` appears in the thought timeline, derived from what the circuit
-  actually bound — no solver file had to change to get it.
+  rotation` appears in the thought timeline,derived from what the circuit
+actually bound, no solver file had to change to get it.
 - **Every number is cited.** "Constants used: 5.97 × 10²⁴ kg, 6.37 × 10⁶ m,
   9.8 m/s²". Constants the problem *implies* ("at the surface of Mars") are
   supplied and named rather than hardcoded per branch.
@@ -189,20 +188,20 @@ tab, so they can never drift apart:
   weigh on the Moon?"
 - **The sheet rescues what no circuit covers.** When every hand-written
   circuit declines, the fly searches the sheet for an equation whose variables
-  all bind, evaluates it, and cites it — or declines, because a wrong number
-  is worse than silence. That search is real dimensional analysis: each of the
+  all bind, evaluates it, and cites it, or declines, because a wrong number
+  is worse than silence. That search is dimensional analysis: each of the
   30 unit families has an SI dimension, and a test asserts every one of the
   ~80 sheet entries is dimensionally self-consistent.
 
 ## Topics covered (full AP Physics C)
 
-**Mechanics** — kinematics · Newton's laws · energy/work · momentum/collisions ·
-rotation · SHM · gravitation **E&M** — electrostatics · capacitors · DC circuits ·
+**Mechanics**: kinematics · Newton's laws · energy/work · momentum/collisions ·
+rotation · SHM · gravitation **E&M**: electrostatics · capacitors · DC circuits ·
 magnetism · induction
 
 Multiple choice (AP-style, 5 options, physics-literate distractors). The
 network is graded on a hand-written bank separate from its training
-generators — the training/eval split is real.
+generators; the training/eval split is enforced.
 
 ## Getting started
 
@@ -215,22 +214,22 @@ npm run brain:build  # rebuild the shipped brain from public/hive.json (determin
 npm run ocr:assets   # one-time: vendor the OCR engine into public/ocr (~11 MB) so the fly can read pictures offline
 ```
 
-Deploy: any static host — `dist/` is a plain static bundle with no server
+Deploy: any static host. `dist/` is a plain static bundle with no server
 dependency. See below for GitHub Pages.
 
 ## Deploying to GitHub Pages
 
-Live at **https://ginyuspecialforce.github.io/FlyPhysicsC/** — a GitHub Pages
+Live at **https://ginyuspecialforce.github.io/FlyPhysicsC/**, a GitHub Pages
 **project site**, served from the `GinyuSpecialForce/FlyPhysicsC` repo's
 `main` branch. It is a static bundle; Pages just serves `dist/`, built by
-GitHub Actions — the workflow's artifact is what gets deployed, never the
+GitHub Actions; the workflow's artifact is what gets deployed, never the
 branch, so nothing in the repo is served directly.
 
 One-time setup, on github.com:
 
 1. Create a repository named **`FlyPhysicsC`** under the owning account and
    make it public (a private repo needs a paid plan to publish Pages). The
-   repo name becomes the URL path, so keep it — and `base`, below — in sync.
+   repo name becomes the URL path, so keep it (and `base`, below) in sync.
 2. **Settings → Pages → Build and deployment → Source: GitHub Actions.**
 3. Push this source tree to `main`.
 
@@ -246,14 +245,14 @@ The workflow in `.github/workflows/ci.yml` then runs on every push to `main`
 or a failing test fails the deploy rather than shipping something broken.
 
 `brain:build` runs in CI on purpose: it is deterministic, so it reproduces
-the committed `public/brain.json` exactly — but if someone edits the corpus
+the committed `public/brain.json` exactly, but if someone edits the corpus
 and forgets to rebuild locally, the deployed brain still matches the corpus
 instead of quietly going stale.
 
 Re-publish without a commit: the **Actions** tab → *CI* → *Run workflow*.
 
-**This is a project site, so `base` is `"/FlyPhysicsC/"`** in `vite.config.ts`
-— the URL path the repo name produces, case included. A user site
+**This is a project site, so `base` is `"/FlyPhysicsC/"`** in `vite.config.ts`,
+the URL path the repo name produces, case included. A user site
 (`account.github.io`, served at the root) would use `base: "/"`, and that is
 the only line that differs: every runtime path goes through
 `import.meta.env.BASE_URL`, including the `brain.json` and `hive.json` the fly
@@ -264,7 +263,7 @@ workflow artifact), but delete it anyway so nobody mistakes it for the
 deployed build.
 
 **Not committed, by design:** `dist/` and `node_modules/`. Everything else is,
-including the 10 MB of OCR assets in `public/ocr` — they're committed on
+including the 10 MB of OCR assets in `public/ocr`; they're committed on
 purpose so a deploy needs no network fetch and the picture-reading feature
 works on a first clone.
 
@@ -276,13 +275,13 @@ works on a first clone.
   compound eyes, proboscis, two-segment antennae, three-segment legs planted
   on the desk (with idle grooming), iridescent swept wings, and a contact
   shadow. The thought timeline walks through each pipeline stage with the
-  actual data; click any stage to inspect — the show holds while you look,
+  actual data; click any stage to inspect; the show holds while you look,
   and the next click lets it run again.
   Once the fly has an answer, **Show the fly's work** (or `W`) opens the whole
   trace at once: quantities, the classifier's full distribution, the equation
   it cited and the ones it passed over.
   The fly never works on its own: click **Ask the fly** to type any
-  question, or **Practice problem** to pull one from the set — otherwise
+  question, or **Practice problem** to pull one from the set; otherwise
   it just grooms and waits. Free-orbit is the default (drag to look around,
   scroll to zoom); Desk / Brain cams ease to preset framings.
 - **Brain Atlas** — a separate orbit-able view of the anatomically-grounded
@@ -358,7 +357,7 @@ test/                 vitest
 - classification well above chance
 - tokenizer: compound units, longest-first parsing, SI conversion
 - lesions: every registry lesion measurably degrades the exam bank
-- regression: a central-complex lesion without an explicit rng really lesions
+- regression: a central-complex lesion without an explicit rng still lesions
 - freeform: typed questions solve end-to-end; unsolvable ones say so
 - freeform robustness: worded units ("6 volts", "meters per second") and question phrasings solve
 - generator fuzz: always 5 valid string choices, valid answer index
@@ -402,4 +401,4 @@ test/                 vitest
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT. See [LICENSE](LICENSE).
