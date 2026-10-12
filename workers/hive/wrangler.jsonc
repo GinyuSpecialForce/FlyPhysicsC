@@ -1,0 +1,15 @@
+{
+  "name": "fly-physics-c-hive",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-08-27",
+  "compatibility_flags": ["nodejs_compat"],
+  "kv_namespaces": [
+    {
+      "binding": "KV",
+      "id": "b6d1654e568b41418a6a6d65f88a3e9e"
+    }
+  ],
+  "observability": {
+    "enabled": true
+  }
+}
