@@ -1,6 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { HiveStore, browserStorage, KEYS, type KeyValueStore } from "../src/core/hive-store";
-import { HiveSync, httpTransport, configuredEndpoint } from "../src/core/sync";
+import { HiveSync, httpTransport, configuredEndpoint, DEFAULT_HIVE_ENDPOINT } from "../src/core/sync";
 import { Network } from "../src/core/network";
 import { Rng } from "../src/core/rng";
 import { makeEntry, mergeCorpora, type HiveEntry } from "../src/core/corpus";
@@ -125,7 +125,9 @@ describe("HiveStore — this device's memory", () => {
   });
 });
 
-describe("HiveSync — live upload, when someone configures an endpoint", () => {
+describe("HiveSync — live upload against the hosted hive", () => {
+  afterEach(() => vi.unstubAllEnvs());
+
   it("is off, and says so, with no endpoint", async () => {
     const sync = new HiveSync({ transport: null });
     expect(sync.getState().status).toBe("off");
@@ -133,8 +135,16 @@ describe("HiveSync — live upload, when someone configures an endpoint", () => 
     await expect(sync.exchange([entry("a")])).resolves.toHaveLength(1);
   });
 
-  it("has no endpoint in the shipped build", () => {
-    // nothing to configure until a store exists; the default must be safe
+  it("points at the hosted hive by default, so every GitHub Pages visitor shares one corpus", () => {
+    vi.stubEnv("VITE_HIVE_ENDPOINT", "");
+    expect(configuredEndpoint()).toBe(DEFAULT_HIVE_ENDPOINT);
+  });
+
+  it("takes a build-time override, and can be switched off for local-only builds", () => {
+    vi.stubEnv("VITE_HIVE_ENDPOINT", " https://my-hive.example ");
+    expect(configuredEndpoint()).toBe("https://my-hive.example");
+
+    vi.stubEnv("VITE_HIVE_ENDPOINT", "off");
     expect(configuredEndpoint()).toBeNull();
   });
 
