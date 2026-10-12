@@ -364,12 +364,23 @@ export function createFly(): Fly {
       group.rotation.z = Math.sin(t * 38) * 0.04 + poke * 0.28; // jabbed rear pops up
       group.position.y += Math.abs(Math.sin(t * 11)) * 0.035 + poke * 0.16;
     } else if (state === "celebrate") {
+      // happy little wiggle: shimmy side to side with a small hop, wings
+      // buzzing — a one-shot celebration before the fly goes back to waiting
+      const s = Math.sin(t * 30);
+      group.rotation.z = s * 0.06;
+      group.position.y += Math.abs(s) * 0.05;
       wings.forEach((w, i) => {
-        const s = i === 0 ? -1 : 1;
-        w.rotation.y = s * (0.45 + Math.sin(t * 70 + i) * 0.5);
+        const wingS = i === 0 ? -1 : 1;
+        w.rotation.y = wingS * (0.45 + Math.sin(t * 70 + i) * 0.5);
         w.rotation.x = -0.35 + Math.sin(t * 70 + 0.5) * 0.2;
       });
-      group.position.y += Math.abs(Math.sin(t * 30)) * 0.05;
+      // legs do a quick celebratory jiggle
+      legs.forEach((leg, i) => {
+        const phase = t * 22 + i * 1.7;
+        leg.root.rotation.x = Math.sin(phase) * 0.18;
+        leg.femur.rotation.x = leg.side * (0.85 + Math.sin(phase * 1.5) * 0.12);
+        leg.tibia.rotation.x = leg.side * (leg.tibiaAngle + Math.sin(phase * 2) * 0.08);
+      });
     } else if (state === "slump") {
       wings.forEach((w) => {
         w.rotation.y = (w === wings[0] ? -1 : 1) * 0.05;

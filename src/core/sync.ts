@@ -1,12 +1,13 @@
 /**
  * The pluggable transport for live hive sync.
  *
- * The site ships with NO endpoint configured, and that is the intended default:
- * it is a static bundle on GitHub Pages with no server and no database, so
- * "upload" cannot mean anything until someone points it at a store. Set
+ * The default endpoint is the hosted hive: the Cloudflare Worker in
+ * workers/hive, backed by a KV namespace, so every build — the GitHub Pages
+ * site included — shares one corpus with no configuration anywhere. Set
  * VITE_HIVE_ENDPOINT (a Cloudflare Worker, a Supabase edge function, a tiny
- * serverless proxy — anything that accepts GET and POST) and the same code
- * path starts syncing with no other change.
+ * serverless proxy — anything that accepts GET and POST) to run a private
+ * store instead, or to "off" to keep every teach on the device it was given
+ * on. Either way the same code path runs; only the URL changes.
  *
  * Everything here is built to be unable to break the fly. Sync is strictly
  * optional, so every failure mode — endpoint unset, offline, 500, timeout,
@@ -67,7 +68,13 @@ export function httpTransport(endpoint: string, opts: HttpTransportOptions = {})
         const res = await request("", {
           method: "POST",
           headers: { "Content-Type": "application/json", ...opts.headers },
-          body: JSON.stringify({ version: 1, entries: batch }),
+          // The corpus carries its contributor as `from: [installId]`. Also
+          // naming it `installId` keeps pushes correct against hive workers
+          // that key on that field instead of `from`.
+          body: JSON.stringify({
+            version: 1,
+            entries: batch.map((e) => (e.from?.length ? { ...e, installId: e.from[0] } : e)),
+          }),
         });
         if (!res.ok) throw new Error(`hive push failed: ${res.status}`);
       }
@@ -75,14 +82,29 @@ export function httpTransport(endpoint: string, opts: HttpTransportOptions = {})
   };
 }
 
-/** The configured endpoint, or null. Unset in the shipped build by default. */
+/**
+ * The hosted hive: the Cloudflare Worker in workers/hive (KV-backed, rate
+ * limited, CORS-open), deployed at this URL. It is the default so every build
+ * shares one corpus out of the box — GitHub Pages visitors sync with each
+ * other with no configuration anywhere.
+ */
+export const DEFAULT_HIVE_ENDPOINT = "https://fly-physics-c-hive.shenronrs3.workers.dev";
+
+/**
+ * The configured endpoint: VITE_HIVE_ENDPOINT when the build sets one,
+ * "off"/"none" for a local-only hive (null), and the hosted hive otherwise.
+ */
 export function configuredEndpoint(): string | null {
+  let value = "";
   try {
-    const value = import.meta.env?.VITE_HIVE_ENDPOINT;
-    return typeof value === "string" && value.trim() ? value.trim() : null;
+    const raw = import.meta.env?.VITE_HIVE_ENDPOINT;
+    value = typeof raw === "string" ? raw.trim() : "";
   } catch {
-    return null;
+    // no build-time env at all — still the hosted hive
   }
+  if (!value) return DEFAULT_HIVE_ENDPOINT;
+  const lower = value.toLowerCase();
+  return lower === "off" || lower === "none" ? null : value;
 }
 
 export interface SyncState {
