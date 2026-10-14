@@ -202,7 +202,7 @@ function normalizeFunctionBody(raw: string, indepVar: string): string {
 }
 
 const FUNC_DECL_RE =
-  /\b([xvafqIΦU])\s*(?:\(\s*([tx])\s*\))?\s*=\s*([-+0-9tx.^*/()\s²³⁴sincotaexp]+?)(?=\s*(?:where\b|with\b|in\s+meters|in\s+seconds|in\s+newtons|in\s+coulombs|in\s+webers|at\s+[tx]\s*=|from\s+[tx]\s*=|between\s+[tx]\s*=|[.;,?]|$))/i;
+  /\b([xvafqIΦU])\s*(?:\(\s*([tx])\s*\))?\s*=\s*([-+0-9tx.^*/()\s²³⁴sincotaexp]+?)(?=\s*(?:meters?\b|seconds?\b|newtons?\b|joules?\b|coulombs?\b|amperes?\b|amps?\b|volts?\b|webers?\b|N\b|J\b|C\b|A\b|V\b|Wb\b|m\/s²\b|m\/s\b|m\b|where\b|with\b|in\s+meters|in\s+seconds|in\s+newtons|in\s+coulombs|in\s+webers|at\s+[tx]\s*=|from\s+[tx]\s*=|between\s+[tx]\s*=|acts\b|pushes\b|pulls\b|moves\b|[.;,?]|$))/i;
 
 /**
  * Solve AP Physics C calculus problems:
@@ -211,6 +211,9 @@ const FUNC_DECL_RE =
  */
 export function calculusAnswer(ctx: SolveCtx, question: string): ReasoningAnswer | undefined {
   const text = ctx.text;
+  // Parametric 2D equations ("x(t) = 2cos(3t), y(t) = 2sin(3t)") belong to the
+  // 2D kinematics circuit, not the 1D scalar calculus solver.
+  if (/\bparametric\b|\by\s*\(\s*t\s*\)\s*=/i.test(text)) return undefined;
   const m = FUNC_DECL_RE.exec(text);
   if (!m) return undefined;
 
@@ -632,7 +635,7 @@ export function scalingAnswer(ctx: SolveCtx, question: string): ReasoningAnswer 
 
   for (const [re, targetFam, eqDisplay] of targetMap) {
     if (!re.test(lower)) continue;
-    const flat = FLAT_ENTRIES.find((f) => f.entry.display.startsWith(eqDisplay.split(" ")[0]) && f.entry.vars[f.entry.target] === targetFam);
+    const flat = FLAT_ENTRIES.find((f) => f.entry.display === eqDisplay);
     if (!flat) continue;
 
     // Evaluate form at all-1s vs scaled factors (with constants set to 1 so they cancel in the ratio)

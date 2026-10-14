@@ -4,7 +4,7 @@
  * (normalized to SI) + keyword hits that the encoder turns into features.
  */
 import { KEYWORDS } from "./features";
-import type { Slot, SlotRole, VectorDir } from "./features";
+import type { Slot } from "./features";
 import { M_EARTH, R_EARTH } from "./earth";
 import { G_ACC } from "./constants";
 
@@ -174,7 +174,7 @@ const UNITS = [
   // "A 20 μF capacitor" isn't read as 20 amperes. Worded-only units
   // ("ohm", "degrees", "radians", "watt", "henry", …) deliberately live in
   // WORDED, not here — the unit-letter guard below lets wordedSlots own them.
-  "Wb", "kg", "mg", "g", "s", "C", "V", "(?<![aA]\\s)A", "F", "T", "N", "J", "W", "H", "m", "h",
+  "Wb", "kg", "mg", "g", "s", "C", "V", "(?<![aA]\\s)A", "F", "T", "N", "J", "W", "H", "m", "(?<!19\\d\\d\\s)h",
 ].join("|");
 
 // (?![a-zA-Z]) is CRITICAL: without it "3 milliamp" parses as "3 m" (length),
@@ -400,21 +400,36 @@ function tagSlotRolesAndDirections(slots: Slot[], fullText: string): void {
     const before = idx >= 0 ? lower.slice(winStart, idx) : "";
     const after = idx >= 0 ? lower.slice(idx + rawSpan.length, winEnd) : "";
     const windowText = `${before} ${rawSpan} ${after}`;
+    // Immediate window right after the quantity ("6 N east", "3 m/s north") so
+    // an adjacent clause's direction never bleeds across "and" or commas.
+    const immediateAfter = idx >= 0 ? lower.slice(idx + rawSpan.length, Math.min(lower.length, idx + rawSpan.length + 18)) : "";
 
     if (s.unit === "velocity" || s.unit === "angular-vel") {
-      if (/\b(?:initial|initially|starts?\s+(?:at|with)|from|moving\s+at|travell?ing\s+at|launched\s+at|thrown\s+(?:[\w\s]{0,12})?at)\b/.test(before)) {
+      if (/\b(?:initial|initially|starts?\s+(?:at|with)|from|moving\s+at|travell?ing\s+at|launched\s+at|thrown\s+(?:[\w\s]{0,12})?at)\b\s*$/.test(before.trim())) {
         s.role = "initial";
       } else if (/\b(?:to|reaches?|final|finally|after(?:ward)?|ends?\s+(?:at|up\s+at)|slows?\s+to|accelerates?\s+to|speeds?\s+up\s+to)\b/.test(before)) {
         s.role = "final";
+      } else if (/\b(?:initial|initially|starts?\s+(?:at|with)|moving\s+at|travell?ing\s+at|launched\s+at)\b/.test(before)) {
+        s.role = "initial";
       }
     } else if (s.unit === "length") {
-      if (/\bdiameter\b/.test(windowText)) s.role = "diameter";
+      // Narrow local window first so adjacent clauses ("around a circular track
+      // of diameter 40 m after falling from a cliff 15 m high") don't bleed roles.
+      const narrowBefore = idx >= 0 ? lower.slice(Math.max(0, idx - 26), idx) : "";
+      const narrowAfter = idx >= 0 ? lower.slice(idx + rawSpan.length, Math.min(lower.length, idx + rawSpan.length + 22)) : "";
+      const narrow = `${narrowBefore} ${rawSpan} ${narrowAfter}`;
+      if (/\bdiameter\b/.test(narrow)) s.role = "diameter";
+      else if (/\bheight|high|tall|deep|cliff|drop|falls?|falling|lifted|raised|above\b/.test(narrow)) s.role = "height";
+      else if (/\bradius|radii|circle|circular|orbit|apart|separation|distance\s+from\b/.test(narrow)) s.role = "radius";
+      else if (/\bdiameter\b/.test(windowText)) s.role = "diameter";
+      else if (/\bheight|high|tall|deep|cliff|drop|falls?|falling|lifted|raised|above\b/.test(windowText)) s.role = "height";
       else if (/\bradius|radii|circle|circular|orbit|apart|separation|distance\s+from\b/.test(windowText)) s.role = "radius";
-      else if (/\bheight|high|tall|deep|cliff|drop|falls?|lifted|raised|above\b/.test(windowText)) s.role = "height";
     }
 
-    // 2D vector direction tagging
-    const dirMatch = windowText.match(
+    // 2D vector direction tagging (check immediate post-quantity phrase first, or immediate pre-quantity "eastward at 6 N")
+    const immediateBefore = idx >= 0 ? lower.slice(Math.max(0, idx - 18), idx) : "";
+    const dirWindow = `${immediateBefore.split(/[,;:]|\band\b/).pop() ?? ""} ${rawSpan} ${immediateAfter.split(/[,;:]|\band\b/)[0] ?? ""}`;
+    const dirMatch = dirWindow.match(
       /\b(east(?:ward)?|west(?:ward)?|north(?:ward)?|south(?:ward)?)\b|([+-]\s*[xy])\s*(?:direction|axis|hat)?|\b([ij])\s*\^/,
     );
     if (dirMatch) {

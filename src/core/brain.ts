@@ -222,44 +222,47 @@ export class FlyBrain {
 
     // ── Stage 4: compute (motor circuit, with bind-check reroute) ────
     const isFollowUp =
-      /^(?:\(?[b-e]\)|\bpart\s+[b-e]\b|\bnow\b|\bsuppose\s+instead\b|\bin\s+the\s+previous\b|\busing\s+the\s+same\b)/i.test(
-        problem.text.trim(),
-      ) || /\b(?:the\s+same\s+(?:block|ball|car|crate|cart|object|mass|spring|circuit|capacitor|resistor|planet|satellite))\b/i.test(problem.text);
+      /\b(?:the\s+same\s+(?:block|ball|car|crate|cart|object|mass|spring|circuit|capacitor|resistor|planet|satellite|wire|coil|loop|charge|particle)|in\s+part\s+\(?[a-d]\)|from\s+part\s+\(?[a-d]\)|in\s+the\s+previous\s+(?:part|problem|question)|suppose\s+instead\s+that\s+it)\b/i.test(
+        problem.text,
+      );
     const explicitFamilies = new Set(slots.map((s) => s.unit));
     const inheritedSlots = isFollowUp
       ? this.workingMemory.filter((s) => !explicitFamilies.has(s.unit))
       : [];
     const effectiveSlots = inheritedSlots.length ? [...slots, ...inheritedSlots] : slots;
-    const ctx = { slots: effectiveSlots, keywordHits, text: problem.text };
+    // Start with the explicit slots so existing stem-bundled problems ("const equator = ...;
+    // solveFreeform(equator + '(b) ...')") aren't polluted by answers from previous parts;
+    // fall back to `effectiveSlots` when the explicit slots alone cannot solve a standalone follow-up.
+    const ctx = { slots, keywordHits, text: problem.text };
     const routedTopic = circuitTopic;
     // A question about a table value ("what is g on Mars?") is a lookup, not a
     // derivation — the constants table answers it before any circuit runs.
-    const cAnswer = constantAnswer(problem.text, effectiveSlots);
-    // A standard textbook setup (an Atwood machine, an RC circuit charging) or
-    // an AP Physics C calculus / proportional-scaling / 2D-vector problem is
+    const cAnswer = constantAnswer(problem.text, slots);
+    // A standard textbook setup (an Atwood machine, an RC circuit charging) is
     // recognized outright and solved with its own equation. Recognizing it is
     // the classifier's and router's work, so a fly lesioned there gets no such
     // shortcut and falls through to whatever circuit it was sent to.
     const routingIntact = this.lesion.type !== "mushroom-bodies" && this.lesion.type !== "central-complex";
     const finalQ = finalQuestion(problem.text);
     const textbook = !cAnswer && routingIntact ? textbookAnswer(ctx, finalQ) : undefined;
+    // Calculus functions (`x(t) = ...`, `F(t) = ...`) or 2D vector problems
+    // (`east` + `north`) cannot be solved accurately by the 1D algebraic
+    // topic circuits, so they run up front when present.
     const calcAns: ReasoningAnswer | undefined =
       !cAnswer && !textbook && routingIntact ? calculusAnswer(ctx, finalQ) : undefined;
-    const scaleAns: ReasoningAnswer | undefined =
-      !cAnswer && !textbook && !calcAns && routingIntact ? scalingAnswer(ctx, finalQ) : undefined;
     const vecAns: ReasoningAnswer | undefined =
-      !cAnswer && !textbook && !calcAns && !scaleAns && routingIntact
+      !cAnswer && !textbook && !calcAns && routingIntact
         ? vector2dAnswer(ctx, finalQ)
         : undefined;
-    const advancedAns = calcAns ?? scaleAns ?? vecAns;
+    let advancedAns: ReasoningAnswer | undefined = calcAns ?? vecAns;
     // If the routed circuit uses none of the slot families the problem
     // actually contains, it cannot bind anything — reroute to the
     // highest-ranked circuit that CAN. A computed zero is a legitimate
     // answer (v = 0, equilibrium, …) and is never rerouted.
-    const present = new Set(effectiveSlots.map((s) => s.unit));
+    const present = new Set(slots.map((s) => s.unit));
     const canBind = (topic: Topic): boolean =>
       (TOPIC_FAMILIES[topic] ?? []).some((f) => present.has(f));
-    if (!cAnswer && !textbook && !advancedAns && !canBind(circuitTopic)) {
+    if (!cAnswer && !textbook && !advancedAns && present.size > 0 && !canBind(circuitTopic)) {
       for (const [topic] of ranked(probs)) {
         if (topic === routedTopic || !canBind(topic)) continue;
         circuitTopic = topic;
@@ -286,7 +289,7 @@ export class FlyBrain {
     // "explain …" / "derive …" questions want a concept — a stray number from
     // an unrelated circuit is not an answer to them, even when the phrasing
     // trips a unit-family rule ("…fictitious force – explain …")
-    const conceptQ = /explain|derive|sketch|show that|distinguish|parametric/.test(finalQ);
+    const conceptQ = /explain|derive|sketch|show that|distinguish|\bparametric equations\b/.test(finalQ);
     const failed = conceptQ
       ? result.concept === undefined
       : wanted
@@ -309,6 +312,61 @@ export class FlyBrain {
       if (pick) {
         circuitTopic = pick.topic;
         result = pick.r;
+      } else if (wanted && result.concept === undefined && Number.isFinite(result.value) && !wanted.includes(result.unit) && slots.length >= 2) {
+        // The routed circuit produced a number in the wrong unit family (e.g.
+        // amperes when the question asked for joules or watts), and no
+        // alternate circuit could produce the wanted unit directly. When at
+        // least 2 explicit slots are present, discard the wrong-family number
+        // so dimensional rescue / multi-hop can solve for the unit the
+        // question actually asked for!
+        result = { value: NaN, unit: wanted[0] };
+      }
+    }
+
+    // Proportional/scaling reasoning (#3: "twice the mass and three times the
+    // radius", "doubles its speed") runs if the hand-written circuits did not
+    // already produce a concept or valid numeric answer.
+    if (
+      !cAnswer &&
+      !textbook &&
+      !advancedAns &&
+      routingIntact &&
+      result.concept === undefined &&
+      !Number.isFinite(result.value)
+    ) {
+      const scaleAns = scalingAnswer(ctx, finalQ);
+      if (scaleAns) {
+        advancedAns = scaleAns;
+        result = scaleAns;
+      }
+    }
+
+    // Multi-part working memory (#7): if the explicit slots in a follow-up part
+    // (`(b) Using the same block...`) couldn't solve the question alone, retry
+    // the topic circuits with the inherited slots from part (a).
+    let usedInheritedSlots = false;
+    if (
+      !cAnswer &&
+      !textbook &&
+      !advancedAns &&
+      !lesioned &&
+      inheritedSlots.length > 0 &&
+      result.concept === undefined &&
+      !Number.isFinite(result.value)
+    ) {
+      const effCtx = { slots: effectiveSlots, keywordHits, text: problem.text };
+      const effPresent = new Set(effectiveSlots.map((s) => s.unit));
+      const effCanBind = (topic: Topic): boolean =>
+        (TOPIC_FAMILIES[topic] ?? []).some((f) => effPresent.has(f));
+      for (const [topic] of ranked(probs)) {
+        if (!effCanBind(topic)) continue;
+        const r = topicModule(topic).solve(effCtx);
+        if (r.concept === undefined && Number.isFinite(r.value) && (!wanted || wanted.includes(r.unit))) {
+          circuitTopic = topic;
+          result = r;
+          usedInheritedSlots = true;
+          break;
+        }
       }
     }
 
@@ -325,9 +383,9 @@ export class FlyBrain {
         (wantSymbolic && result.concept === undefined));
     if (needRescue) {
       const vars = tokenizeVars(problem.text);
-      const implicitSlots = extractImplicitSlots(problem.text, effectiveSlots);
+      const implicitSlots = extractImplicitSlots(problem.text, slots);
       const rescueOpts = {
-        slots: effectiveSlots,
+        slots,
         text: problem.text,
         wanted: wanted?.map((u) => familyForUnit(u)).filter((f): f is UnitFamily => !!f),
         rankedTopics: ranked(probs).map(([t]) => t),
@@ -336,15 +394,22 @@ export class FlyBrain {
         wantSymbolic,
       };
       if (result.concept === undefined && !Number.isFinite(result.value)) {
-        const rescue =
+        const rescue1 =
           rescueSolve(rescueOpts) ??
           (implicitSlots.length
-            ? rescueSolve({ ...rescueOpts, slots: [...effectiveSlots, ...implicitSlots] })
+            ? rescueSolve({ ...rescueOpts, slots: [...slots, ...implicitSlots] })
             : undefined) ??
           rescueMultiHop(rescueOpts);
+        const rescue2 =
+          !rescue1 && inheritedSlots.length
+            ? rescueSolve({ ...rescueOpts, slots: [...effectiveSlots, ...implicitSlots] }) ??
+              rescueMultiHop({ ...rescueOpts, slots: [...effectiveSlots, ...implicitSlots] })
+            : undefined;
+        const rescue = rescue1 ?? rescue2;
         if (rescue) {
           rescued = rescue;
           result = { value: rescue.value, unit: rescue.unit };
+          if (rescue2) usedInheritedSlots = true;
         }
       }
       // "in terms of m and v" wants the EXPRESSION, so a circuit that happily
@@ -400,7 +465,7 @@ export class FlyBrain {
         ? `Conceptual answer: ${result.concept}`
         : `Computed ${fmt(result.value / (result.displayScale ?? 1))} ${result.unit}${result.displaySuffix ? ` ${result.displaySuffix}` : ""}`,
     ];
-    if (inheritedSlots.length) {
+    if (usedInheritedSlots && inheritedSlots.length) {
       computeDetails.unshift(
         `Working memory: inherited ${inheritedSlots.map((s) => `${s.text} (${s.unit})`).join(", ")} from previous part`,
       );
@@ -502,7 +567,7 @@ export class FlyBrain {
     // Update multi-part working memory (#7) with explicit slots plus the newly
     // computed answer slot so a follow-up "(b)" question can bind them.
     if (!lesioned) {
-      const nextMemory: Slot[] = [...effectiveSlots];
+      const nextMemory: Slot[] = [...(usedInheritedSlots ? effectiveSlots : slots)];
       if (Number.isFinite(result.value)) {
         const ansFam = familyForUnit(result.unit);
         if (ansFam) {
@@ -567,7 +632,13 @@ const WANTED_UNITS: Array<[RegExp, string[]]> = [
   [/energy|work|heat/, ["J"]],
   [/power/, ["W"]],
   [/at what separation|what is the separation|find the separation|determine the separation|how far apart/, ["m"]],
-  [/force|weight|tension|push|pull/, ["N"]],
+  // questions that ASK for a force ("what force...", "find the tension...",
+  // "how much weight...", "calculate the 'centrifugal force'...") — never
+  // "if the force acts for 6 s, what speed..."
+  [
+    /(?:what|which|find|determine|calculate|estimate|how\s+much|magnitude\s+of\s+(?:the\s+)?|net\s+|resultant\s+|centripetal\s+|centrifugal\s+|gravitational\s+|electrostatic\s+|electric\s+|magnetic\s+|normal\s+|frictional\s+)(?:[\w"'\u201c\u201d-]+\s+){0,4}[\w"'\u201c\u201d-]*(?:force|weight|tension|push|pull)\b|(?:force|weight|tension)\s+(?:on|between|acting|exerted|needed|required|that|of\s+[\w'\u2019-]+\s+gravity|of\s+gravity|in\s+the)/,
+    ["N"],
+  ],
   [/capacitance/, ["μF"]],
   [/resistance/, ["Ω"]],
   [/current/, ["A"]],
@@ -580,7 +651,7 @@ const WANTED_UNITS: Array<[RegExp, string[]]> = [
   [/voltage|potential difference|\bemf\b|\bvolts\b/, ["V"]],
   [/frequency/, ["Hz"]],
   [
-    /what is (?:the |its |their )?period|what period|find the period|determine the period|calculate the period|period of (?:the |this |its )?(?:motion|orbit|oscillation|swing|pendulum|revolution)|period\??$/,
+    /what is (?:the |its |their )?period|what period|find the period|determine the period|calculate the period|period of (?:the |this |its )?(?:motion|orbit|oscillation|swing|pendulum|revolution)|period\??$|at what length of day|what length of day/,
     ["s"],
   ],
   [/how long (?:does|to|it|will|would)|amount of time|point in time|time (?:does it take|to|it can|for the|needed|required|at which)/, ["s"]],
@@ -608,7 +679,7 @@ const WANTED_UNITS: Array<[RegExp, string[]]> = [
  */
 export function finalQuestion(text: string): string {
   // a trailing aside — "(I = MR²)", "(hint: ignore air)" — is not the question
-  const stripped = text.trim().replace(/\s*\([^()]*\)\s*$/, "");
+  const stripped = text.trim().replace(/\s*\([^()]*\)([.?!]*)\s*$/, "$1");
   const sentences = stripped.split(/(?<=[.?])\s+/);
   const tail = sentences.pop() ?? "";
   const q = tail.split(/\s+/).filter(Boolean).length < 3 && sentences.length ? `${sentences.pop()} ${tail}` : tail;

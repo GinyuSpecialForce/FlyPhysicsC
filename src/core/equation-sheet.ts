@@ -438,6 +438,7 @@ export const EQUATIONS: SheetEquation[] = [
     aliases: ["power", "how fast work is done", "rate of doing work"],
     entries: [
       { display: "P = W/Δt", target: "P", form: "W/t", vars: { ...PLAIN, P: "power", W: "energy", t: "time" } },
+      { display: "W = PΔt", target: "W", form: "P*t", vars: { ...PLAIN, W: "energy", P: "power", t: "time" } },
       { display: "P = Fv", target: "P", form: "F*v", vars: { ...PLAIN, P: "power", F: "force", v: "velocity" } },
     ],
   },

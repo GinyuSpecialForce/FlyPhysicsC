@@ -35,13 +35,14 @@ export function solve(ctx: SolveCtx): {
   const charges = takeAll(ctx.slots, "charge");
   const lengths = takeAll(ctx.slots, "length");
   const fields = takeAll(ctx.slots, "field-e");
+  const forces = takeAll(ctx.slots, "force");
   const t = ctx.text.toLowerCase();
 
-  // inverse-square concept questions ("distance triples → 1/9")
-  if (/triples/.test(t)) {
+  // inverse-square concept questions ("distance triples → 1/9") when no baseline force is given
+  if (!forces.length && /triples/.test(t)) {
     return { value: NaN, unit: "concept", concept: "1/9 of original" };
   }
-  if (/doubles/.test(t)) {
+  if (!forces.length && /doubles/.test(t)) {
     return { value: NaN, unit: "concept", concept: "1/4 of original" };
   }
   // attract/repel concept question
