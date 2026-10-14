@@ -397,19 +397,23 @@ export function createFly(): Fly {
       group.rotation.z = 0;
     }
 
-    // legs: idle micro-shift / walk-fidget; front-leg rub while grooming
-    legs.forEach((leg, i) => {
-      const phase = t * 1.8 + i * 1.3;
-      let lift = Math.sin(phase) * 0.05;
-      if (grooming && leg.row === 0) {
-        lift = 0.55 + Math.sin(t * 16 + leg.side * Math.PI / 1.5) * 0.35;
-      }
-      if (flying) lift = -0.15; // tucked in flight
-      else if (arrived === "hell") lift = Math.abs(Math.sin(t * 11 + i * 1.7)) * 0.5; // hot feet
-      leg.root.rotation.x = lift;
-      leg.femur.rotation.x = leg.side * (0.85 + (grooming && leg.row === 0 ? Math.sin(t * 16) * 0.2 : 0));
-      leg.tibia.rotation.x = leg.side * leg.tibiaAngle;
-    });
+    // legs: idle micro-shift / walk-fidget; front-leg rub while grooming.
+    // Celebrate already posed the legs into their celebratory jiggle above,
+    // so skip overwriting them here.
+    if (state !== "celebrate") {
+      legs.forEach((leg, i) => {
+        const phase = t * 1.8 + i * 1.3;
+        let lift = Math.sin(phase) * 0.05;
+        if (grooming && leg.row === 0) {
+          lift = 0.55 + Math.sin(t * 16 + (leg.side * Math.PI) / 1.5) * 0.35;
+        }
+        if (flying) lift = -0.15; // tucked in flight
+        else if (arrived === "hell") lift = Math.abs(Math.sin(t * 11 + i * 1.7)) * 0.5; // hot feet
+        leg.root.rotation.x = lift;
+        leg.femur.rotation.x = leg.side * (0.85 + (grooming && leg.row === 0 ? Math.sin(t * 16) * 0.2 : 0));
+        leg.tibia.rotation.x = leg.side * leg.tibiaAngle;
+      });
+    }
 
     // state-specific head behavior
     if (state === "reading") {

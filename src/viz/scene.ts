@@ -62,7 +62,10 @@ const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, preser
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   const pmrem = new THREE.PMREMGenerator(renderer);
-  scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+  const roomEnv = new RoomEnvironment();
+  scene.environment = pmrem.fromScene(roomEnv, 0.04).texture;
+  roomEnv.dispose();
+  pmrem.dispose();
   scene.environmentIntensity = 0.3;
   mount.appendChild(renderer.domElement);
 
@@ -369,7 +372,9 @@ const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, preser
 
   function tick(dt: number, t: number): void {
     fly.tick(dt, t);
-    realms.tick(dt, t, fly.visit());
+    if (realms.group.visible) {
+      realms.tick(dt, t, fly.visit());
+    }
     brain.tick(dt, t);
     controls.update();
     lampGlow.intensity = 7 + Math.sin(t * 9.3) * 0.4 + Math.sin(t * 23.7) * 0.2;
@@ -380,6 +385,7 @@ const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, preser
   function dispose(): void {
     window.removeEventListener("resize", resize);
     controls.dispose();
+    composer.dispose();
     renderer.dispose();
     mount.removeChild(renderer.domElement);
   }

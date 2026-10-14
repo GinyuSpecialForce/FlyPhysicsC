@@ -192,8 +192,32 @@ const CELESTIAL =
  */
 const ALTITUDE_GEOMETRY = /\baltitudes?\b|\babove the (?:earth'?s |surface )|\bhigher than\b/;
 
-/** Bind one variable key to a slot of the declared family, without reuse. */
-function bind(family: UnitFamily, slots: Slot[], used: Set<number>): Slot | undefined {
+/** Bind one variable key to a slot of the declared family, without reuse.
+ *  When `key` hints at an initial (`vi`, `v0`, `w1`) or final (`vf`, `w2`)
+ *  quantity, prefer a slot carrying that semantic role first.
+ */
+function bind(family: UnitFamily, slots: Slot[], used: Set<number>, key?: string): Slot | undefined {
+  const preferredRole =
+    key === "vi" || key === "v0" || key === "w1" || key === "x0"
+      ? "initial"
+      : key === "vf" || key === "w2"
+        ? "final"
+        : key === "r"
+          ? "radius"
+          : key === "h" || key === "y"
+            ? "height"
+            : undefined;
+  if (preferredRole) {
+    for (let i = 0; i < slots.length; i++) {
+      if (used.has(i)) continue;
+      if (slots[i].unit !== family) continue;
+      if (!Number.isFinite(slots[i].value)) continue;
+      if (slots[i].role === preferredRole) {
+        used.add(i);
+        return slots[i];
+      }
+    }
+  }
   for (let i = 0; i < slots.length; i++) {
     if (used.has(i)) continue;
     if (slots[i].unit !== family) continue;
@@ -295,7 +319,7 @@ export function rescueSolve(opts: RescueOptions): RescueResult | undefined {
         taken.add(label.sym);
         if (label.explicit) explicitSymbols++;
       }
-      const found = barred ? undefined : bind(family, slots, usedSlots);
+      const found = barred ? undefined : bind(family, slots, usedSlots, key);
       if (found) {
         bindings[key] = found.value;
         continue;
@@ -408,6 +432,102 @@ export function rescueSolve(opts: RescueOptions): RescueResult | undefined {
     runnersUp: scored.slice(1, 4).map((s) => s.flat.entry.display),
     symbolic,
   };
+}
+
+/**
+ * Multi-hop forward-chaining dimensional rescue (depth 2).
+ *
+ * When a single sheet equation cannot bridge the given `slots` to `wanted`
+ * (for example, given `V`, `R`, `t` and asked for energy `W = P·t` via `P = V²/R`,
+ * or given `F`, `m`, `v` and asked for power or displacement via `a = F/m`),
+ * this searches pairs of equations `(step1 → intermediateSlot → step2)` where:
+ *   1. `step1` binds cleanly to a subset of the given `slots` and produces a
+ *      new quantity family not already present;
+ *   2. `step2` consumes that derived quantity TOGETHER with all remaining
+ *      unused given slots to produce a `wanted` family;
+ *   3. every given slot in the problem is consumed across the two steps (no
+ *      leftover unexplainable numbers).
+ *
+ * Kept separate from `rescueSolve()` so single-hop callers and tests keep
+ * their exact single-equation semantics.
+ */
+export function rescueMultiHop(opts: RescueOptions): (RescueResult & { chainSteps: string[] }) | undefined {
+  const { slots, wanted, circuitTopic, text } = opts;
+  if (!wanted?.length || slots.length < 2) return undefined;
+  const lower = text.toLowerCase();
+  if (ALTITUDE_GEOMETRY.test(lower)) return undefined;
+  // If the text explicitly supplies a parenthesized formula hint like "(I = MR²)",
+  // let the dedicated textbook/shape solver handle or decline as appropriate.
+  if (/\([iI]\s*=/.test(text)) return undefined;
+
+  const presentFamilies = new Set(slots.map((s) => s.unit));
+
+  for (const flat1 of FLAT_ENTRIES) {
+    const { entry: e1, equation: eq1 } = flat1;
+    if (eq1.requires && !eq1.requires.some((w) => lower.includes(w))) continue;
+    const midFamily = e1.vars[e1.target];
+    // Only synthesize an intermediate quantity we don't already have
+    if (presentFamilies.has(midFamily)) continue;
+
+    const used1 = new Set<number>();
+    const bind1: Record<string, number> = {};
+    let ok1 = true;
+    for (const [k, fam] of Object.entries(e1.vars)) {
+      if (k === e1.target) continue;
+      const found = bind(fam, slots, used1, k);
+      if (!found) {
+        ok1 = false;
+        break;
+      }
+      bind1[k] = found.value;
+    }
+    if (!ok1 || used1.size === 0 || used1.size >= slots.length) continue;
+
+    let midVal = NaN;
+    try {
+      midVal = evalNode(parseForm(e1.form), bind1);
+    } catch {
+      continue;
+    }
+    if (!Number.isFinite(midVal)) continue;
+
+    // Build the augmented slot list: unused original slots + the derived intermediate slot
+    const remainingSlots: Slot[] = slots.filter((_, idx) => !used1.has(idx));
+    const derivedSlot: Slot = {
+      unit: midFamily,
+      value: midVal,
+      text: `${e1.target} (from ${e1.display})`,
+    };
+    const step2Slots = [...remainingSlots, derivedSlot];
+
+    // Step 2 must use ALL remaining slots plus the derived intermediate slot,
+    // and land directly on a wanted unit family.
+    const step2 = rescueSolve({
+      slots: step2Slots,
+      text,
+      wanted,
+      rankedTopics: opts.rankedTopics,
+      circuitTopic,
+    });
+    if (!step2) continue;
+
+    // Verify step 2 actually consumed the derived intermediate family and all remaining slots
+    const step2Inputs = Object.entries(step2.entry.vars).filter(([k]) => k !== step2.entry.target);
+    if (step2Inputs.length < remainingSlots.length + 1) continue;
+    if (!step2Inputs.some(([, fam]) => fam === midFamily)) continue;
+
+    return {
+      ...step2,
+      display: `${e1.display} → ${step2.display}`,
+      bindings: { ...bind1, ...step2.bindings },
+      chainSteps: [
+        `Step 1 (${eq1.section}): ${e1.display} → ${midVal.toPrecision(4)} ${FAMILY_UNIT[midFamily]}`,
+        `Step 2 (${step2.section}): ${step2.display} → ${step2.value.toPrecision(4)} ${step2.unit}`,
+      ],
+    };
+  }
+
+  return undefined;
 }
 
 // ── citations ───────────────────────────────────────────────────────

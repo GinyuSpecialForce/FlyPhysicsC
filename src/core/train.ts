@@ -14,6 +14,7 @@ import { Network } from "./network";
 import { Rng } from "./rng";
 import type { Problem, ThoughtRecord } from "./types";
 import { LESIONS, type Lesion, type LesionType } from "./lesions";
+import { dedupe, entryVector, VOTE_CAP, type HiveEntry } from "./corpus";
 
 export interface EpochSample {
   input: number[];
@@ -59,6 +60,13 @@ export interface TrainOptions {
    * N-epoch call.
    */
   state?: TrainState;
+  /**
+   * Optional shared hive corpus entries to interleave into every epoch
+   * (with `verdict === "taught"` corrections oversampled as hard negatives),
+   * so human corrections shape the mushroom-body representation during training
+   * rather than only as a post-hoc nudge.
+   */
+  hiveEntries?: readonly HiveEntry[];
 }
 
 export interface EvalResult {
@@ -97,6 +105,8 @@ export function trainNetwork(seed: number, epochs: number, samplesPerEpoch = 600
   const losses: number[] = [];
   const evalAccuracies: number[] = [];
 
+  const canonicalHive = opts.hiveEntries?.length ? dedupe(opts.hiveEntries) : [];
+
   for (let epoch = 0; epoch < epochs; epoch++) {
     const samples = makeSamples(topics, samplesPerEpoch, rng);
     let totalLoss = 0;
@@ -106,6 +116,17 @@ export function trainNetwork(seed: number, epochs: number, samplesPerEpoch = 600
       // go easy where the priors already get it right
       const stepLr = lr * (biasedProbs[s.topicIndex] > 0.5 ? 0.35 : 1);
       totalLoss += network.trainStep(s.input, s.topicIndex, stepLr);
+    }
+    if (canonicalHive.length > 0) {
+      for (const e of canonicalHive) {
+        const topicIndex = TOPIC_LIST.indexOf(e.topic);
+        if (topicIndex < 0) continue;
+        const input = entryVector(e);
+        const votes = Math.min(Math.max(e.votes, 1), VOTE_CAP);
+        // Oversample "taught" human corrections relative to passive "right" confirmations
+        const weight = (e.verdict === "taught" ? 0.14 : 0.06) * Math.sqrt(votes);
+        network.trainStep(input, topicIndex, weight);
+      }
     }
     const meanLoss = totalLoss / samples.length;
     const acc = evaluate(network).accuracy;

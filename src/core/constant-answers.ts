@@ -13,6 +13,7 @@
 import { constant, resolveWorldName, surfaceGravityId, valueOf, worldG, WORLDS } from "./constant-table";
 import type { Constant } from "./constant-table";
 import { takeAll } from "./extract";
+import type { Slot } from "./features";
 import { tokenize } from "./tokenizer";
 
 export interface ConstantAnswer {
@@ -42,6 +43,22 @@ function need(id: string): Constant {
 
 const BODY_WORDS = "mercury|venus|earth|mars|jupiter|saturn|pluto|moon|luna";
 
+const ATTR_RE = new RegExp(
+  `\\b(?:what(?:'s| is)|how (?:long|much)(?:'s| is)?|find|give me the|` +
+    `state the|determine the)\\s+(?:the\\s+|a\\s+|an\\s+)?` +
+    `(mass|radius|diameter|year|orbital period|distance from the sun)\\s+` +
+    `(?:of|on|around)\\s+(?:the\\s+)?(${BODY_WORDS}|sun)\\b`,
+);
+
+const ASKS_G_RE = new RegExp(
+  `\\b(?:g|gravity|gravitational acceleration|acceleration due to gravity)\\b\\s*` +
+    `(?:on|at|over|for)\\s+(?:the\\s+)?(?:surface of\\s+)?(${BODY_WORDS})\\b`,
+);
+
+const WEIGHS_RE = new RegExp(`\\bweighs?\\b[^?]*\\b(?:on|at)\\s+(?:the\\s+)?(${BODY_WORDS})\\b`);
+
+const ORBIT_Q_RE = new RegExp(`\\borbital (?:speed|velocity)\\b[^?]*\\b(${BODY_WORDS})\\b`);
+
 /** Normalized body id for a word matched by a template, or undefined. */
 function bodyId(word: string): string | undefined {
   const w = word.toLowerCase();
@@ -55,20 +72,15 @@ function bodyId(word: string): string | undefined {
 const HYPOTHETICAL =
   /hypothetical|multiple of earth|\btimes earth'?s\b|\bif (?:it|the planet|the world) (?:had|were)\b|planet [qvxy]\b|\bnew (?:planet|world)\b/;
 
-export function constantAnswer(text: string): ConstantAnswer | undefined {
+export function constantAnswer(text: string, preTokenizedSlots?: Slot[]): ConstantAnswer | undefined {
   const lower = text.toLowerCase();
   const q = questionOf(lower);
-  const { slots } = tokenize(text);
+  const slots = preTokenizedSlots ?? tokenize(text).slots;
   const masses = takeAll(slots, "mass");
   const lengths = takeAll(slots, "length");
 
   // ── "what is the mass / radius / year of <body>?" ────────────────
-  const attr = new RegExp(
-    `\\b(?:what(?:'s| is)|how (?:long|much)(?:'s| is)?|find|give me the|` +
-      `state the|determine the)\\s+(?:the\\s+|a\\s+|an\\s+)?` +
-      `(mass|radius|diameter|year|orbital period|distance from the sun)\\s+` +
-      `(?:of|on|around)\\s+(?:the\\s+)?(${BODY_WORDS}|sun)\\b`,
-  ).exec(q);
+  const attr = ATTR_RE.exec(q);
   if (attr) {
     const what = attr[1];
     const name = bodyId(attr[2]) ?? "earth";
@@ -113,10 +125,7 @@ export function constantAnswer(text: string): ConstantAnswer | undefined {
   const asksG =
     /\b(?:what(?:'s| is)|how (?:strong|big|much) is|calculate|determine|find|compute)\b/.test(q) &&
     !/\bforce\b|\bweight\b|\bweightless\b|\bpull\b/.test(q) &&
-    new RegExp(
-      `\\b(?:g|gravity|gravitational acceleration|acceleration due to gravity)\\b\\s*` +
-        `(?:on|at|over|for)\\s+(?:the\\s+)?(?:surface of\\s+)?(${BODY_WORDS})\\b`,
-    ).exec(q);
+    ASKS_G_RE.exec(q);
   if (asksG && !masses.length && !lengths.length) {
     const name = bodyId(asksG[1]) ?? "earth";
     const w = WORLDS[name];
@@ -132,7 +141,7 @@ export function constantAnswer(text: string): ConstantAnswer | undefined {
   }
 
   // ── "how much does a 70 kg person weigh on the Moon?" ────────────
-  const weighs = new RegExp(`\\bweighs?\\b[^?]*\\b(?:on|at)\\s+(?:the\\s+)?(${BODY_WORDS})\\b`).exec(q);
+  const weighs = WEIGHS_RE.exec(q);
   if (masses.length && (weighs || (/\bweighs?\b/.test(q) && world)) && !/same weight/.test(q)) {
     const name = bodyId(weighs?.[1] ?? world ?? "");
     // a mass in free fall or orbit has no weight to speak of — the circuits
@@ -185,7 +194,7 @@ export function constantAnswer(text: string): ConstantAnswer | undefined {
         how: "v_escape = √(2GM/R) = √(2gR)",
       };
     }
-    const orbitQ = new RegExp(`\\borbital (?:speed|velocity)\\b[^?]*\\b(${BODY_WORDS})\\b`).exec(q);
+    const orbitQ = ORBIT_Q_RE.exec(q);
     if (orbitQ) {
       const name = bodyId(orbitQ[1]);
       const b = name ? WORLDS[name] : undefined;

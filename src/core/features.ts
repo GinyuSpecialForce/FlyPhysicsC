@@ -22,6 +22,17 @@ export type Topic = (typeof TOPICS)[number];
 
 export const TOPIC_LIST: readonly Topic[] = TOPICS;
 
+export type SlotRole =
+  | "initial"
+  | "final"
+  | "height"
+  | "radius"
+  | "diameter"
+  | "central"
+  | "orbiter";
+
+export type VectorDir = "east" | "west" | "north" | "south" | "+x" | "-x" | "+y" | "-y";
+
 /** A quantity the tokenizer found in the problem text. */
 export interface Slot {
   /** normalized unit key, e.g. "m", "m/s", "N", "kg", "rad/s" */
@@ -29,6 +40,12 @@ export interface Slot {
   value: number;
   /** raw text span, for display */
   text: string;
+  /** optional semantic role inferred from context ("initial", "final", "radius", "height", …) */
+  role?: SlotRole;
+  /** optional 2D cardinal/axis direction attached to this quantity */
+  dir?: VectorDir;
+  /** true when synthesized from boundary phrases like "from rest" or "to a stop" */
+  implicit?: boolean;
 }
 
 /** What the tokenizer + labeler produce for one problem. */

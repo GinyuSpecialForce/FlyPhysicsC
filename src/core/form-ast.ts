@@ -25,10 +25,16 @@ export const FORM_FUNCS: Record<string, (...args: number[]) => number> = {
   sin: (a) => Math.sin(a),
   cos: (a) => Math.cos(a),
   tan: (a) => Math.tan(a),
+  exp: (a) => Math.exp(a),
 };
+
+/** Cache of parsed form ASTs (Node trees are immutable once built). */
+const FORM_AST_CACHE = new Map<string, Node>();
 
 /** Parse a form. Throws on anything that isn't plain arithmetic. */
 export function parseForm(form: string): Node {
+  const cached = FORM_AST_CACHE.get(form);
+  if (cached) return cached;
   const src = form.replace(/\s+/g, "");
   let i = 0;
   const peek = (): string => src[i] ?? "";
@@ -109,5 +115,6 @@ export function parseForm(form: string): Node {
   };
   const node = expr();
   if (i !== src.length) throw new Error(`trailing input at ${i} in ${form}`);
+  if (FORM_AST_CACHE.size < 1024) FORM_AST_CACHE.set(form, node);
   return node;
 }

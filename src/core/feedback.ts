@@ -14,6 +14,7 @@ interface Entry {
   words: Set<string>;
   topic: Topic;
   text: string;
+  key: string;
 }
 
 /** Words too common to identify a problem; keep the physics vocabulary. */
@@ -34,6 +35,10 @@ function words(text: string): Set<string> {
   );
 }
 
+function canonicalWordsKey(wordSet: Set<string>): string {
+  return [...wordSet].sort().join(" ");
+}
+
 function jaccard(a: Set<string>, b: Set<string>): number {
   let inter = 0;
   for (const w of a) if (b.has(w)) inter++;
@@ -46,9 +51,22 @@ export const SIMILARITY_THRESHOLD = 0.45;
 export class FeedbackMemory {
   private entries: Entry[] = [];
 
-  /** Remember that `text` should be handled as `topic`. */
+  /**
+   * Remember that `text` should be handled as `topic`.
+   * If an entry with the exact same normalized word-bag already exists, update
+   * its topic in place rather than stacking duplicate entries that skew votes.
+   */
   record(text: string, topic: Topic): void {
-    this.entries.push({ words: words(text), topic, text });
+    const w = words(text);
+    if (w.size === 0) return;
+    const key = canonicalWordsKey(w);
+    const existing = this.entries.find((e) => e.key === key);
+    if (existing) {
+      existing.topic = topic;
+      existing.text = text;
+      return;
+    }
+    this.entries.push({ words: w, topic, text, key });
   }
 
   get size(): number {

@@ -123,7 +123,10 @@ async function boot(): Promise<void> {
     const chunkShare = 62 / chunks;
     let state: TrainState | undefined;
     for (let i = 0; i < chunks; i++) {
-      const result = trainNetwork(DEFAULT_TRAIN.seed, 1, DEFAULT_TRAIN.samples, { state });
+      const result = trainNetwork(DEFAULT_TRAIN.seed, 1, DEFAULT_TRAIN.samples, {
+        state,
+        hiveEntries,
+      });
       state = result.state;
       network = result.network;
       acc = result.finalEvalAccuracy;
@@ -144,8 +147,12 @@ async function boot(): Promise<void> {
 
   // replay only the teaches the current weights have not already absorbed, so
   // two machines that have seen the same corpus end up with the same brain
-  const unseen = decoded ? hiveEntries.filter((e) => !decoded.bakedKeys.has(keyHash(e))) : hiveEntries;
-  const replayed = replayCorpus(unseen, network);
+  if (decoded) {
+    for (const k of decoded.bakedKeys) absorbedHiveKeys.add(k);
+  }
+  const unseen = hiveEntries.filter((e) => !absorbedHiveKeys.has(keyHash(e)));
+  const replayed = localWeights ? 0 : replayCorpus(unseen, network);
+  for (const e of hiveEntries) absorbedHiveKeys.add(keyHash(e));
   if (replayed) {
     setBoot(76, `Learned ${replayed} shared ${replayed === 1 ? "teach" : "teaches"} from ${hiveEntries.length} in the hive…`);
     await frame();
@@ -184,6 +191,8 @@ let lastFeedback: { text: string; topic: Topic } | null = null;
 let store!: HiveStore;
 let installId = "anon";
 let hiveEntries: HiveEntry[] = [];
+/** keyHash of every hive entry already absorbed into the running network + FeedbackMemory. */
+const absorbedHiveKeys = new Set<string>();
 let hivePanel!: { refresh: () => void };
 const endpoint = configuredEndpoint();
 const hiveSync = new HiveSync({
@@ -205,11 +214,34 @@ function persistLocal(): void {
   }, 400);
 }
 
+/**
+ * Fold any newly-arrived hive entries into the running network and episodic
+ * memory, so teaches received from the live worker or an imported file
+ * immediately make this fly smarter.
+ */
+function absorbNewEntries(entries: readonly HiveEntry[]): number {
+  const fresh: HiveEntry[] = [];
+  for (const e of entries) {
+    const k = keyHash(e);
+    if (!absorbedHiveKeys.has(k)) {
+      absorbedHiveKeys.add(k);
+      fresh.push(e);
+    }
+    feedbackMemory.record(e.text, e.topic);
+  }
+  if (fresh.length === 0) return 0;
+  return replayCorpus(fresh, network);
+}
+
 /** Push our teaches and pull everyone else's. Silent when no endpoint is set. */
 async function syncHive(): Promise<void> {
   const merged = await hiveSync.exchange(hiveEntries);
+  const learnedCount = absorbNewEntries(merged);
   hiveEntries = merged;
   store.saveEntries(hiveEntries);
+  if (learnedCount > 0) {
+    store.saveWeights(network, baseDigest, brainMeta);
+  }
   hivePanel?.refresh();
 }
 
@@ -235,6 +267,7 @@ function recordTeach(text: string, topic: Topic, verdict: HiveVerdict, strength:
   deskBrain.learn(text, topic, strength);
   const entry = makeEntry(text, topic, verdict, installId);
   if (!entry.text && entry.units.length === 0 && entry.keywords.length === 0) return;
+  absorbedHiveKeys.add(keyHash(entry));
   hiveEntries = store.addEntries([entry]);
   hivePanel?.refresh();
   persistLocal();
@@ -249,6 +282,10 @@ let work!: WorkSheet;
 let atlas: BrainAtlas | null = null;
 let atlasBuilt = false;
 let lastAtlasStage = "";
+let referenceRendered = false;
+let lesionViewReady = false;
+let lesionViewDirty = false;
+let applyLesionFn!: (type: LesionType) => void;
 
 // the fly only works when handed a problem — nothing runs on its own
 let hasActiveProblem = false;
@@ -434,6 +471,19 @@ function switchView(name: string): void {
     atlas?.setVisible(true);
   } else {
     atlas?.setVisible(false);
+  }
+  if (name === "lesion") {
+    if (!lesionViewReady) {
+      initLesionView(() => network, applyLesionFn);
+      lesionViewReady = true;
+      lesionViewDirty = false;
+    } else if (lesionViewDirty) {
+      refreshLesionEvals(network, applyLesionFn);
+      lesionViewDirty = false;
+    }
+  } else if (name === "reference" && !referenceRendered) {
+    renderReference();
+    referenceRendered = true;
   }
 }
 
@@ -705,8 +755,8 @@ function startApp(): void {
     if (hasActiveProblem) startProblem();
   };
 
+  applyLesionFn = applyLesion;
   loadProblems();
-  renderReference();
   wireUI(applyLesion);
   initTrainView((trained) => {
     network = trained;
@@ -722,8 +772,13 @@ function startApp(): void {
       const ff = byId("freeformInput") as HTMLTextAreaElement;
       if (ff.value.trim()) startFreeform();
     }
-    refreshLesionEvals(network, applyLesion);
-  });
+    if (lesionViewReady && byId("view-lesion").classList.contains("active")) {
+      refreshLesionEvals(network, applyLesion);
+      lesionViewDirty = false;
+    } else if (lesionViewReady) {
+      lesionViewDirty = true;
+    }
+  }, () => hiveEntries);
 
   hivePanel = initHiveView({
     entries: () => hiveEntries,
@@ -745,11 +800,10 @@ function startApp(): void {
         return;
       }
       // imported teaches must actually teach THIS fly, not just sit in a list
-      const fresh = incoming.filter((e) => !hiveEntries.some((h) => keyHash(h) === keyHash(e)));
-      for (const entry of fresh) feedbackMemory.record(entry.text, entry.topic);
       hiveEntries = store.addEntries(incoming);
-      replayCorpus(fresh, network);
+      absorbNewEntries(hiveEntries);
       persistLocal();
+      schedulePush();
     },
     forget: () => {
       if (!confirm("Erase everything this device knows? Every teach you have given and all local learning will be gone.")) return;
@@ -762,12 +816,17 @@ function startApp(): void {
     status: () => hiveSync.getState(),
   });
 
-  initLesionView(() => network, applyLesion);
-
   // the fly's brain exists before anything is asked of it
   deskBrain = makeBrain(network, { type: lesion }, feedbackMemory);
 
   showWaiting();
+
+  // Pull the live shared corpus from the hosted hive in the background once
+  // the scene is interactive, so every visitor benefits from the crowd's
+  // teaches without blocking the boot animation.
+  if (hiveSync.transport) {
+    void syncHive();
+  }
 
   let last = performance.now();
   function loop(now: number): void {

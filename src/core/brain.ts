@@ -3,17 +3,19 @@
  * (mushroom bodies), routing picks a circuit (central complex), the circuit
  * computes (motor systems). Every step records a trace for the 3D scene.
  */
-import { tokenize, familyForUnit } from "./tokenizer";
+import { tokenize, familyForUnit, extractImplicitSlots } from "./tokenizer";
 import { buildFeatureVector, TOPIC_LIST } from "./features";
+import type { Topic, Slot } from "./features";
 import { blendPriors, keywordPriors } from "./priors";
-import type { Topic } from "./features";
 import { Network } from "./network";
 import { topicModule } from "./topics/index";
 import type { SolveResult } from "./topics/index";
 import { constantAnswer } from "./constant-answers";
 import { textbookAnswer } from "./textbook";
+import { calculusAnswer, scalingAnswer, vector2dAnswer } from "./reasoning";
+import type { ReasoningAnswer } from "./reasoning";
 import { suppliedConstants } from "./constant-table";
-import { citeEquation, equationForConcept, rescueSolve } from "./dimension-solver";
+import { citeEquation, equationForConcept, rescueSolve, rescueMultiHop } from "./dimension-solver";
 import type { Citation, RescueResult } from "./dimension-solver";
 import { canonical, materialize, parseChoiceExpression, symbolsOf } from "./symbolic";
 import type { Sym } from "./symbolic";
@@ -36,6 +38,18 @@ export class FlyBrain {
   private lastSource: ThoughtRecord["source"] = undefined;
   /** Most recent freeform answer — solve(FREEFORM_PROBLEM) re-returns it. */
   private lastRecord: ThoughtRecord | null = null;
+  /**
+   * Working memory across multi-part questions `(a)` → `(b)` → `(c)`:
+   * stores slots and computed answers from the most recent problem so
+   * follow-up parts ("In part (b), if a 4 N force acts for 3 s, what is its final speed?")
+   * can inherit physical parameters without re-stating the whole setup.
+   */
+  private workingMemory: Slot[] = [];
+
+  /** Clear multi-part working memory explicitly if starting an unrelated session. */
+  clearContext(): void {
+    this.workingMemory = [];
+  }
 
   constructor(
     network: Network,
@@ -207,25 +221,45 @@ export class FlyBrain {
     }
 
     // ── Stage 4: compute (motor circuit, with bind-check reroute) ────
-    const ctx = { slots, keywordHits, text: problem.text };
+    const isFollowUp =
+      /^(?:\(?[b-e]\)|\bpart\s+[b-e]\b|\bnow\b|\bsuppose\s+instead\b|\bin\s+the\s+previous\b|\busing\s+the\s+same\b)/i.test(
+        problem.text.trim(),
+      ) || /\b(?:the\s+same\s+(?:block|ball|car|crate|cart|object|mass|spring|circuit|capacitor|resistor|planet|satellite))\b/i.test(problem.text);
+    const explicitFamilies = new Set(slots.map((s) => s.unit));
+    const inheritedSlots = isFollowUp
+      ? this.workingMemory.filter((s) => !explicitFamilies.has(s.unit))
+      : [];
+    const effectiveSlots = inheritedSlots.length ? [...slots, ...inheritedSlots] : slots;
+    const ctx = { slots: effectiveSlots, keywordHits, text: problem.text };
     const routedTopic = circuitTopic;
     // A question about a table value ("what is g on Mars?") is a lookup, not a
     // derivation — the constants table answers it before any circuit runs.
-    const cAnswer = constantAnswer(problem.text);
-    // A standard textbook setup (an Atwood machine, an RC circuit charging) is
+    const cAnswer = constantAnswer(problem.text, effectiveSlots);
+    // A standard textbook setup (an Atwood machine, an RC circuit charging) or
+    // an AP Physics C calculus / proportional-scaling / 2D-vector problem is
     // recognized outright and solved with its own equation. Recognizing it is
     // the classifier's and router's work, so a fly lesioned there gets no such
     // shortcut and falls through to whatever circuit it was sent to.
     const routingIntact = this.lesion.type !== "mushroom-bodies" && this.lesion.type !== "central-complex";
-    const textbook = !cAnswer && routingIntact ? textbookAnswer(ctx, finalQuestion(problem.text)) : undefined;
+    const finalQ = finalQuestion(problem.text);
+    const textbook = !cAnswer && routingIntact ? textbookAnswer(ctx, finalQ) : undefined;
+    const calcAns: ReasoningAnswer | undefined =
+      !cAnswer && !textbook && routingIntact ? calculusAnswer(ctx, finalQ) : undefined;
+    const scaleAns: ReasoningAnswer | undefined =
+      !cAnswer && !textbook && !calcAns && routingIntact ? scalingAnswer(ctx, finalQ) : undefined;
+    const vecAns: ReasoningAnswer | undefined =
+      !cAnswer && !textbook && !calcAns && !scaleAns && routingIntact
+        ? vector2dAnswer(ctx, finalQ)
+        : undefined;
+    const advancedAns = calcAns ?? scaleAns ?? vecAns;
     // If the routed circuit uses none of the slot families the problem
     // actually contains, it cannot bind anything — reroute to the
     // highest-ranked circuit that CAN. A computed zero is a legitimate
     // answer (v = 0, equilibrium, …) and is never rerouted.
-    const present = new Set(slots.map((s) => s.unit));
+    const present = new Set(effectiveSlots.map((s) => s.unit));
     const canBind = (topic: Topic): boolean =>
       (TOPIC_FAMILIES[topic] ?? []).some((f) => present.has(f));
-    if (!cAnswer && !textbook && !canBind(circuitTopic)) {
+    if (!cAnswer && !textbook && !advancedAns && !canBind(circuitTopic)) {
       for (const [topic] of ranked(probs)) {
         if (topic === routedTopic || !canBind(topic)) continue;
         circuitTopic = topic;
@@ -235,12 +269,14 @@ export class FlyBrain {
     const mod = topicModule(circuitTopic);
     let result: SolveResult = cAnswer
       ? { value: cAnswer.value, unit: cAnswer.unit }
-      : (textbook ?? mod.solve(ctx));
+      : (textbook ?? advancedAns ?? mod.solve(ctx));
     // answer-family check: if the question asks for a KIND of quantity this
     // circuit can't produce (wrong unit — volts for an amps question), try
     // the next-ranked circuits that can. A number in the wrong family is a
     // wrong answer even when the arithmetic is perfect.
-    const wanted = wantedUnits(problem.text);
+    // Choice-guided unit inference (#8): if the prose did not name a unit
+    // clearly, inspect the multiple-choice options for a shared unit!
+    const wanted = wantedUnits(problem.text) ?? choiceUnits(problem.choices);
     const ok = (r: typeof result) =>
       r.concept !== undefined || (Number.isFinite(r.value) && (!wanted || wanted.includes(r.unit)));
     // A circuit that produced the wrong KIND of answer — or nothing at all —
@@ -250,13 +286,13 @@ export class FlyBrain {
     // "explain …" / "derive …" questions want a concept — a stray number from
     // an unrelated circuit is not an answer to them, even when the phrasing
     // trips a unit-family rule ("…fictitious force – explain …")
-    const conceptQ = /explain|derive|sketch|show that|distinguish|parametric/.test(finalQuestion(problem.text));
+    const conceptQ = /explain|derive|sketch|show that|distinguish|parametric/.test(finalQ);
     const failed = conceptQ
       ? result.concept === undefined
       : wanted
         ? !ok(result)
         : result.concept === undefined && !Number.isFinite(result.value);
-    if (!cAnswer && !textbook && !lesioned && failed) {
+    if (!cAnswer && !textbook && !advancedAns && !lesioned && failed) {
       // with no quantities at all, every circuit is equally able to "bind"
       const alts = ranked(probs)
         .filter(([topic]) => topic !== circuitTopic && (present.size === 0 || canBind(topic)))
@@ -281,34 +317,46 @@ export class FlyBrain {
     // whose variables all bind and whose answer is the kind the question
     // wants. It runs only after both second chances above, so it can never
     // override a working circuit — and it is free to decline.
-    let rescued: RescueResult | undefined;
-    const vars = tokenizeVars(problem.text);
+    let rescued: (RescueResult & { chainSteps?: string[] }) | undefined;
     const wantSymbolic = wantsSymbolicQuestion(problem.text);
-    const rescueOpts = {
-      slots,
-      text: problem.text,
-      wanted: wanted?.map((u) => familyForUnit(u)).filter((f): f is UnitFamily => !!f),
-      rankedTopics: ranked(probs).map(([t]) => t),
-      circuitTopic,
-      vars,
-      wantSymbolic,
-    };
-    if (!cAnswer && result.concept === undefined && !Number.isFinite(result.value)) {
-      const rescue = rescueSolve(rescueOpts);
-      if (rescue) {
-        rescued = rescue;
-        result = { value: rescue.value, unit: rescue.unit };
+    const needRescue =
+      !cAnswer &&
+      ((result.concept === undefined && !Number.isFinite(result.value)) ||
+        (wantSymbolic && result.concept === undefined));
+    if (needRescue) {
+      const vars = tokenizeVars(problem.text);
+      const implicitSlots = extractImplicitSlots(problem.text, effectiveSlots);
+      const rescueOpts = {
+        slots: effectiveSlots,
+        text: problem.text,
+        wanted: wanted?.map((u) => familyForUnit(u)).filter((f): f is UnitFamily => !!f),
+        rankedTopics: ranked(probs).map(([t]) => t),
+        circuitTopic,
+        vars,
+        wantSymbolic,
+      };
+      if (result.concept === undefined && !Number.isFinite(result.value)) {
+        const rescue =
+          rescueSolve(rescueOpts) ??
+          (implicitSlots.length
+            ? rescueSolve({ ...rescueOpts, slots: [...effectiveSlots, ...implicitSlots] })
+            : undefined) ??
+          rescueMultiHop(rescueOpts);
+        if (rescue) {
+          rescued = rescue;
+          result = { value: rescue.value, unit: rescue.unit };
+        }
       }
-    }
-    // "in terms of m and v" wants the EXPRESSION, so a circuit that happily
-    // computed a number has not answered the question — go back to the
-    // sheet with symbols in play. The number is still reported alongside it.
-    if (!cAnswer && wantSymbolic && result.concept === undefined && rescued?.symbolic === undefined) {
-      const symbolicRescue = rescueSolve({ ...rescueOpts, wantSymbolic: true });
-      if (symbolicRescue?.symbolic) {
-        rescued ??= symbolicRescue;
-        if (!Number.isFinite(result.value) && Number.isFinite(symbolicRescue.value)) {
-          result = { value: symbolicRescue.value, unit: symbolicRescue.unit };
+      // "in terms of m and v" wants the EXPRESSION, so a circuit that happily
+      // computed a number has not answered the question — go back to the
+      // sheet with symbols in play. The number is still reported alongside it.
+      if (wantSymbolic && result.concept === undefined && rescued?.symbolic === undefined) {
+        const symbolicRescue = rescueSolve({ ...rescueOpts, wantSymbolic: true });
+        if (symbolicRescue?.symbolic) {
+          rescued ??= symbolicRescue;
+          if (!Number.isFinite(result.value) && Number.isFinite(symbolicRescue.value)) {
+            result = { value: symbolicRescue.value, unit: symbolicRescue.unit };
+          }
         }
       }
     }
@@ -343,17 +391,27 @@ export class FlyBrain {
         ? `Read off the constants table: ${cAnswer.primary.display} (${cAnswer.how})`
         : textbook
           ? `Recognized a standard setup: ${textbook.equation}`
-          : circuitTopic !== routedTopic
-          ? `Rerouted: the ${routedTopic} circuit couldn't bind this phrasing, but the ${circuitTopic} circuit could`
-          : `Bound slots to the standard ${circuitTopic} equation`,
+          : advancedAns
+            ? `${advancedAns.how} (${advancedAns.equation})`
+            : circuitTopic !== routedTopic
+              ? `Rerouted: the ${routedTopic} circuit couldn't bind this phrasing, but the ${circuitTopic} circuit could`
+              : `Bound slots to the standard ${circuitTopic} equation`,
       result.concept !== undefined
         ? `Conceptual answer: ${result.concept}`
         : `Computed ${fmt(result.value / (result.displayScale ?? 1))} ${result.unit}${result.displaySuffix ? ` ${result.displaySuffix}` : ""}`,
     ];
+    if (inheritedSlots.length) {
+      computeDetails.unshift(
+        `Working memory: inherited ${inheritedSlots.map((s) => `${s.text} (${s.unit})`).join(", ")} from previous part`,
+      );
+    }
     if (rescued) {
       computeDetails.unshift(
         `No circuit covered this. Solved dimensionally from ${rescued.section}: ${rescued.display}`,
       );
+      if (rescued.chainSteps?.length) {
+        computeDetails.push(...rescued.chainSteps);
+      }
       const sub = Object.entries(rescued.bindings)
         .map(([k, v]) => `${k} = ${fmt(v)}`)
         .join(", ");
@@ -439,6 +497,23 @@ export class FlyBrain {
       traces[traces.length - 1].details.push(
         `Lesioned: ${this.lesion.type}. This answer reflects the damaged brain.`,
       );
+    }
+
+    // Update multi-part working memory (#7) with explicit slots plus the newly
+    // computed answer slot so a follow-up "(b)" question can bind them.
+    if (!lesioned) {
+      const nextMemory: Slot[] = [...effectiveSlots];
+      if (Number.isFinite(result.value)) {
+        const ansFam = familyForUnit(result.unit);
+        if (ansFam) {
+          nextMemory.push({
+            unit: ansFam,
+            value: result.value,
+            text: `${fmt(result.value)} ${result.unit}`,
+          });
+        }
+      }
+      this.workingMemory = nextMemory;
     }
 
     return {
@@ -544,6 +619,28 @@ export function finalQuestion(text: string): string {
 export function wantedUnits(text: string): string[] | null {
   const q = finalQuestion(text);
   for (const [re, units] of WANTED_UNITS) if (re.test(q)) return units;
+  return null;
+}
+
+/**
+ * Choice-guided unit inference (#8): when a multiple-choice question's prose
+ * leaves the target unit ambiguous ("What is the reading on the meter?",
+ * "Find the value at t = 2 s"), inspect the options for a consensus unit.
+ */
+export function choiceUnits(choices: readonly { text: string }[]): string[] | null {
+  if (choices.length < 2) return null;
+  const unitCounts = new Map<string, number>();
+  for (const c of choices) {
+    const m = c.text.trim().match(/^-?[\d.]+(?:×10[⁻⁰¹²³⁴⁵⁶⁷⁸⁹⁺]+)?\s+([A-Za-zμΩ°·/²³]+)$/);
+    if (!m) continue;
+    const u = m[1];
+    if (familyForUnit(u)) {
+      unitCounts.set(u, (unitCounts.get(u) ?? 0) + 1);
+    }
+  }
+  for (const [u, count] of unitCounts) {
+    if (count >= Math.ceil(choices.length * 0.6)) return [u];
+  }
   return null;
 }
 

@@ -112,9 +112,9 @@ export async function preprocess(file: Blob, maxEdge = 2000): Promise<Blob> {
   return blob;
 }
 
-/** A small data URL of the preprocessed image, for the confirmation card. */
-export async function preview(file: Blob): Promise<string> {
-  const prepared = await preprocess(file, 900);
+/** A small data URL of an already-preprocessed image (or raw image), for the confirmation card. */
+export async function preview(file: Blob, alreadyPreprocessed = false): Promise<string> {
+  const prepared = alreadyPreprocessed ? file : await preprocess(file, 900);
   return new Promise((res, rej) => {
     const reader = new FileReader();
     reader.onload = () => res(String(reader.result));
@@ -203,7 +203,7 @@ export async function readImage(
   const worker = await getWorker(onProgress);
   onProgress?.({ stage: "sharpening the page", progress: 0.08 });
   const prepared = await preprocess(file);
-  const thumbnail = await preview(file);
+  const thumbnail = await preview(prepared, true);
   onProgress?.({ stage: "reading the page", progress: 0.2 });
   const { data } = await worker.recognize(prepared);
   onProgress?.({ stage: "reading the page", progress: 0.99 });

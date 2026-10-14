@@ -4,7 +4,7 @@
  * (normalized to SI) + keyword hits that the encoder turns into features.
  */
 import { KEYWORDS } from "./features";
-import type { Slot } from "./features";
+import type { Slot, SlotRole, VectorDir } from "./features";
 import { M_EARTH, R_EARTH } from "./earth";
 import { G_ACC } from "./constants";
 
@@ -372,12 +372,98 @@ export function tokenize(text: string): TokenizeResult {
   // wordedSlots sees the same stripped text as quantitySlots — otherwise
   // pre-extracted spans ("two 6 ohm …") would be counted twice
   const slots: Slot[] = [...pre, ...quantitySlots(working), ...wordedSlots(working)];
+  tagSlotRolesAndDirections(slots, text);
   const keywordHits: number[] = [];
   const lower = text.toLowerCase();
   for (let i = 0; i < KEYWORDS.length; i++) {
     if (lower.includes(KEYWORDS[i])) keywordHits.push(i);
   }
   return { slots, keywordHits };
+}
+
+/**
+ * Tag extracted slots with semantic roles (`initial`, `final`, `radius`,
+ * `height`, …) and 2D cardinal/axis directions (`east`, `north`, `+x`, …)
+ * from the surrounding prose window. Never alters `value` or `unit`, so
+ * `buildFeatureVector` stays byte-identical.
+ */
+function tagSlotRolesAndDirections(slots: Slot[], fullText: string): void {
+  const lower = fullText.toLowerCase();
+  let searchFrom = 0;
+  for (const s of slots) {
+    const rawSpan = s.text.toLowerCase();
+    let idx = lower.indexOf(rawSpan, searchFrom);
+    if (idx < 0) idx = lower.indexOf(rawSpan);
+    if (idx >= 0) searchFrom = idx + rawSpan.length;
+    const winStart = Math.max(0, (idx >= 0 ? idx : 0) - 42);
+    const winEnd = Math.min(lower.length, (idx >= 0 ? idx + rawSpan.length : lower.length) + 42);
+    const before = idx >= 0 ? lower.slice(winStart, idx) : "";
+    const after = idx >= 0 ? lower.slice(idx + rawSpan.length, winEnd) : "";
+    const windowText = `${before} ${rawSpan} ${after}`;
+
+    if (s.unit === "velocity" || s.unit === "angular-vel") {
+      if (/\b(?:initial|initially|starts?\s+(?:at|with)|from|moving\s+at|travell?ing\s+at|launched\s+at|thrown\s+(?:[\w\s]{0,12})?at)\b/.test(before)) {
+        s.role = "initial";
+      } else if (/\b(?:to|reaches?|final|finally|after(?:ward)?|ends?\s+(?:at|up\s+at)|slows?\s+to|accelerates?\s+to|speeds?\s+up\s+to)\b/.test(before)) {
+        s.role = "final";
+      }
+    } else if (s.unit === "length") {
+      if (/\bdiameter\b/.test(windowText)) s.role = "diameter";
+      else if (/\bradius|radii|circle|circular|orbit|apart|separation|distance\s+from\b/.test(windowText)) s.role = "radius";
+      else if (/\bheight|high|tall|deep|cliff|drop|falls?|lifted|raised|above\b/.test(windowText)) s.role = "height";
+    }
+
+    // 2D vector direction tagging
+    const dirMatch = windowText.match(
+      /\b(east(?:ward)?|west(?:ward)?|north(?:ward)?|south(?:ward)?)\b|([+-]\s*[xy])\s*(?:direction|axis|hat)?|\b([ij])\s*\^/,
+    );
+    if (dirMatch) {
+      if (dirMatch[1]) {
+        const d = dirMatch[1];
+        if (d.startsWith("east")) s.dir = "east";
+        else if (d.startsWith("west")) s.dir = "west";
+        else if (d.startsWith("north")) s.dir = "north";
+        else if (d.startsWith("south")) s.dir = "south";
+      } else if (dirMatch[2]) {
+        const axis = dirMatch[2].replace(/\s+/g, "") as "+x" | "-x" | "+y" | "-y";
+        s.dir = axis;
+      } else if (dirMatch[3]) {
+        s.dir = dirMatch[3] === "i" ? "+x" : "+y";
+      }
+    }
+  }
+}
+
+/**
+ * Extract implicit zero boundary conditions ("starts from rest" → v_i = 0,
+ * "comes to a stop / at maximum height" → v_f = 0, "stationary target" → v = 0).
+ * Kept separate from `tokenize()` so the neural network feature vector (which
+ * counts explicit slots) is never perturbed.
+ */
+export function extractImplicitSlots(text: string, existing: readonly Slot[]): Slot[] {
+  const lower = text.toLowerCase();
+  const out: Slot[] = [];
+  const hasInitialVel = existing.some((s) => s.unit === "velocity" && s.role === "initial");
+  const hasFinalVel = existing.some((s) => s.unit === "velocity" && s.role === "final");
+
+  if (
+    !hasInitialVel &&
+    /\b(?:from\s+rest|starts?\s+at\s+rest|initially\s+at\s+rest|released\s+from\s+rest|dropped)\b/.test(lower)
+  ) {
+    out.push({ unit: "velocity", value: 0, text: "0 m/s (from rest)", role: "initial", implicit: true });
+  }
+  if (
+    !hasFinalVel &&
+    /\b(?:to\s+rest|to\s+a\s+stop|comes?\s+to\s+rest|stops\b|until\s+it\s+stops|maximum\s+height|highest\s+point|peak\s+height)\b/.test(
+      lower,
+    )
+  ) {
+    out.push({ unit: "velocity", value: 0, text: "0 m/s (at rest / stop)", role: "final", implicit: true });
+  }
+  if (/\b(?:stationary|at\s+rest)\s+(?:[\d.]+\s*(?:kg|kilograms?|g|grams?)\s+)?(?:object|ball|block|cart|car|mass|target|disk|puck)\b/.test(lower)) {
+    out.push({ unit: "velocity", value: 0, text: "0 m/s (stationary body)", role: "initial", implicit: true });
+  }
+  return out;
 }
 
 /** Parse a raw number+unit string into an SI slot (shared by pre-extractors). */
@@ -476,17 +562,29 @@ function normSymbol(sym: string): string {
   return out;
 }
 
+const ASSIGNED_VAR_RE = new RegExp(
+  `(?:^|[\\s(])(${SYMBOL_TOKEN})\\s*=\\s*(-?[\\d.,]+(?:\\s*[×x]\\s*10\\s*\\^?\\s*(?:-?\\d+|[⁻⁰¹²³⁴⁵⁶⁷⁸⁹]+))?)\\s*(${UNITS})(?![a-zA-Z])`,
+  "g",
+);
+
+const CUED_VAR_RES: ReadonlyArray< readonly [RegExp, string]> = CUE_FAMILY.map(
+  ([source, family]) =>
+    [
+      new RegExp(
+        `\\b(?:${source})\\b(?:\\s+(?:of|for|the|a|an|its|his|her|their|is|equals|at)){0,2}\\s+(${SYMBOL_TOKEN})(?![\\w\\u2080-\\u2089])`,
+        "gi",
+      ),
+      family,
+    ] as const,
+);
+
 /**
  * Tier A — an explicit assignment. "m = 2.0 kg" names both the symbol and its
  * value, which is the one form that cannot be mistaken for a unit.
  */
 function assignedVars(text: string): VarBinding[] {
   const out: VarBinding[] = [];
-  const re = new RegExp(
-    `(?:^|[\\s(])(${SYMBOL_TOKEN})\\s*=\\s*(-?[\\d.,]+(?:\\s*[×x]\\s*10\\s*\\^?\\s*(?:-?\\d+|[⁻⁰¹²³⁴⁵⁶⁷⁸⁹]+))?)\\s*(${UNITS})(?![a-zA-Z])`,
-    "g",
-  );
-  for (const m of text.matchAll(re)) {
+  for (const m of text.matchAll(ASSIGNED_VAR_RE)) {
     const value = toNumber(m[2]);
     if (!Number.isFinite(value)) continue;
     const unit = normalizeUnit(m[3]);
@@ -509,11 +607,7 @@ function assignedVars(text: string): VarBinding[] {
  */
 function cuedVars(text: string): VarBinding[] {
   const out: VarBinding[] = [];
-  for (const [source, family] of CUE_FAMILY) {
-    const re = new RegExp(
-      `\\b(?:${source})\\b(?:\\s+(?:of|for|the|a|an|its|his|her|their|is|equals|at)){0,2}\\s+(${SYMBOL_TOKEN})(?![\\w\\u2080-\\u2089])`,
-      "gi",
-    );
+  for (const [re, family] of CUED_VAR_RES) {
     for (const m of text.matchAll(re)) {
       out.push({ symbol: normSymbol(m[1]), family, text: m[0].trim() });
     }

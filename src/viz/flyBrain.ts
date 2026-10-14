@@ -290,9 +290,10 @@ export function buildFlyBrain(opts: BrainBuildOpts): FlyBrain {
   // material instance because it fades independently
   const pulseGeo = new THREE.SphereGeometry(0.045, 10, 8);
 
+  const tmpWorldPos = new THREE.Vector3();
   function stageAnchorWorld(stage: StageId, side: -1 | 0 | 1): THREE.Vector3 {
     const r = regions.find((x) => x.stage === stage && (x.side === side || x.side === 0) && x.name !== "");
-    return r ? r.mesh.getWorldPosition(new THREE.Vector3()) : new THREE.Vector3();
+    return r ? r.mesh.getWorldPosition(tmpWorldPos).clone() : new THREE.Vector3();
   }
 
   function spawnPulse(from: StageId, to: StageId): void {
@@ -323,12 +324,14 @@ export function buildFlyBrain(opts: BrainBuildOpts): FlyBrain {
 
   function tick(dt: number, t: number): void {
     if (!visible) return;
-    for (const r of regions) {
-      const m = r.mesh.material as THREE.MeshPhysicalMaterial;
-      const active = r.stage !== null && r.stage === activeStage;
-      const base = opts.physical ? 0.18 : 0.3;
-      const target = active ? (opts.physical ? 1.0 + 0.35 * Math.sin(t * 7 + r.mesh.position.x * 4) : 1.2 + 0.4 * Math.sin(t * 7 + r.mesh.position.x * 4)) : base;
-      m.emissiveIntensity += (target - m.emissiveIntensity) * Math.min(1, dt * 7);
+    if (opts.physical) {
+      for (const r of regions) {
+        const m = r.mesh.material as THREE.MeshPhysicalMaterial;
+        const active = r.stage !== null && r.stage === activeStage;
+        const base = 0.18;
+        const target = active ? 1.0 + 0.35 * Math.sin(t * 7 + r.mesh.position.x * 4) : base;
+        m.emissiveIntensity += (target - m.emissiveIntensity) * Math.min(1, dt * 7);
+      }
     }
     if (outline && selected) {
       const s = 1.12 + Math.sin(t * 4) * 0.03;

@@ -4,7 +4,7 @@
  * biological circuits combine innate and learned pathways. Fragment → additive
  * logit per topic.
  */
-import type { Topic } from "./features";
+import { TOPIC_LIST, type Topic } from "./features";
 
 type PriorRule = [fragment: string, topic: Topic, weight: number];
 
@@ -209,10 +209,34 @@ const QUESTION_RULES: PriorRule[] = [
   ["energy", "energy", 1.2],
   ["how high", "kinematics", 2],
   ["acceleration", "kinematics", 1],
+  // relational & calculus bigrams (Upgrade #9)
+  ["x(t)", "kinematics", 3.5],
+  ["v(t)", "kinematics", 3.5],
+  ["a(t)", "kinematics", 3],
+  ["f(t)", "momentum", 3],
+  ["f(x)", "energy", 3.5],
+  ["u(x)", "energy", 3.5],
+  ["q(t)", "circuits", 3.5],
+  ["i(t)", "circuits", 3],
+  ["without slipping", "rotation", 3.5],
+  ["rotational kinetic", "rotation", 3.5],
+  ["angular momentum", "rotation", 3.5],
+  ["inelastic collision", "momentum", 3.5],
+  ["elastic collision", "momentum", 3.5],
+  ["center of mass", "momentum", 3.5],
+  ["terminal voltage", "circuits", 3.5],
+  ["time constant", "circuits", 3],
+  ["parallel-plate", "capacitors", 3.5],
+  ["surface gravity", "gravitation", 3.5],
 ];
 
 /** Both rule sets, hoisted so keywordPriors allocates nothing extra per call. */
 const RULE_SETS: readonly (readonly PriorRule[])[] = [RULES, QUESTION_RULES];
+
+/** Pre-built topic → index lookup for the canonical TOPIC_LIST. */
+const DEFAULT_TOPIC_INDEX: ReadonlyMap<Topic, number> = new Map(
+  TOPIC_LIST.map((t, i) => [t, i]),
+);
 
 /**
  * Blend learned topic probabilities with innate priors: multiply by
@@ -241,9 +265,10 @@ export function blendPriors(probs: number[], logPriors: number[]): number[] {
 export function keywordPriors(text: string, topics: readonly Topic[]): number[] {
   const t = text.toLowerCase();
   const priors = new Array<number>(topics.length).fill(0);
-  // one topic→index map per call instead of an indexOf scan per rule hit
-  const index = new Map<Topic, number>();
-  for (let i = 0; i < topics.length; i++) index.set(topics[i], i);
+  const index: ReadonlyMap<Topic, number> =
+    topics === TOPIC_LIST
+      ? DEFAULT_TOPIC_INDEX
+      : new Map(topics.map((topic, i) => [topic, i]));
   for (const rules of RULE_SETS) {
     for (const [fragment, topic, weight] of rules) {
       if (t.includes(fragment)) {

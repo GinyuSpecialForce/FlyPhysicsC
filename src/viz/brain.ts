@@ -82,7 +82,9 @@ export function createBrainHolo(): BrainHolo {
   const shells: { mat: THREE.ShaderMaterial; intensity: number }[] = [];
   for (const r of built.regions) {
     const std = r.mesh.material as THREE.MeshStandardMaterial;
-    r.mesh.material = holoMaterial(std.emissive ?? new THREE.Color(GROUP_TONE[r.group] ?? 0x8fb0ff));
+    const color = std.emissive ?? new THREE.Color(GROUP_TONE[r.group] ?? 0x8fb0ff);
+    std.dispose();
+    r.mesh.material = holoMaterial(color);
     shells.push({ mat: r.mesh.material as THREE.ShaderMaterial, intensity: 0.35 });
 
     // wireframe structure on named regions only — wiring every unnamed

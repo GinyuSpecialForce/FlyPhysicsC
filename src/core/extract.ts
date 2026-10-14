@@ -42,8 +42,18 @@ export function omegaOf(slots: Slot[], text: string): number | undefined {
   return undefined;
 }
 
+/** First slot value matching a semantic role (e.g., "initial", "final", "radius"), else undefined. */
+export function takeRole(slots: Slot[], family: string, role: NonNullable<Slot["role"]>): number | undefined {
+  for (const s of slots) if (s.unit === family && s.role === role) return s.value;
+  return undefined;
+}
+
 /** Circle radius: a "diameter" length is halved, a radius is used as-is. */
 export function radiusOf(slots: Slot[], text: string): number | undefined {
+  const diam = takeRole(slots, "length", "diameter");
+  if (diam !== undefined) return diam / 2;
+  const rad = takeRole(slots, "length", "radius");
+  if (rad !== undefined) return rad;
   const lengths = takeAll(slots, "length");
   if (!lengths.length) return undefined;
   return /diameter/i.test(text) ? lengths[0] / 2 : lengths[0];
