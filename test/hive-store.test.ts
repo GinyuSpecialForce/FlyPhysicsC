@@ -220,6 +220,51 @@ describe("HiveSync — live upload against the hosted hive", () => {
     expect(merged).toHaveLength(1);
     expect(merged[0].votes).toBe(2);
   });
+
+  it("skips a redundant pull when push already returns the merged corpus", async () => {
+    let pulls = 0;
+    const sync = new HiveSync({
+      transport: {
+        name: "test",
+        pull: async () => {
+          pulls++;
+          return [];
+        },
+        push: async (e) => [...e, entry("orbital period satellite", "gravitation")],
+      },
+    });
+    const merged = await sync.exchange([entry("incline friction")]);
+    expect(pulls).toBe(0);
+    expect(merged).toHaveLength(2);
+  });
+
+  it("only pushes unsynced entries on subsequent exchanges", async () => {
+    const pushed: HiveEntry[][] = [];
+    const sync = new HiveSync({
+      transport: {
+        name: "test",
+        pull: async () => [],
+        push: async (e) => {
+          pushed.push([...e]);
+          return [...e];
+        },
+      },
+    });
+    const first = entry("incline friction");
+    const merged1 = await sync.exchange([first]);
+    expect(pushed).toHaveLength(1);
+    expect(pushed[0]).toEqual([first]);
+
+    // Second exchange with the same entry should not re-POST it
+    await sync.exchange(merged1);
+    expect(pushed).toHaveLength(1);
+
+    // Adding a new entry only pushes the new one
+    const second = entry("spring period", "shm");
+    await sync.exchange([...merged1, second]);
+    expect(pushed).toHaveLength(2);
+    expect(pushed[1]).toEqual([second]);
+  });
 });
 
 describe("httpTransport", () => {

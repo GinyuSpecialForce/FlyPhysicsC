@@ -61,4 +61,14 @@ describe("feedback: the human tells the fly right/wrong and it learns", () => {
     expect(rec.computedAnswer).toBe("124 m/s²");
     expect(mem.size).toBe(1);
   });
+
+  it("deduplicates identical word-bags and updates the topic in place instead of stacking votes", () => {
+    const mem = new FeedbackMemory();
+    mem.record(CRATE, "energy");
+    mem.record(CRATE, "energy");
+    expect(mem.size).toBe(1);
+    mem.record(CRATE, "newton");
+    expect(mem.size).toBe(1);
+    expect(mem.lookup(CRATE)).toBe("newton");
+  });
 });
