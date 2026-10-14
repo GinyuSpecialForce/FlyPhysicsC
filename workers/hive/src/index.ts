@@ -1,4 +1,35 @@
-/**\n * The live hive endpoint — a tiny anonymous write/read corpus for the fly.\n *\n * Runtime model: Cloudflare Workers passes kv_namespace bindings through the\n * `env` parameter of fetch(request, env, ctx). wrangler's deploy output calls\n * it `env.KV`, so we read it from `env.KV` rather than expecting a global.\n *\n * Design (concurrent-safe without CAS):\n *  - Each *contribution* is an immutable record under one KV key:\n *      v:<entryHash>:<installId>  →  { text, topic, verdict, units, keywords, ts }\n *    Two visitors teaching the same phrasing share an entryHash but differ in\n *    installId, so their records never clobber; two clicks from one visitor are\n *    idempotent (same key, same value).\n *  - A POST dedups its own batch first: within one request, one submitter never\n *    contributes the same (entryHash, installId) twice. This bounds the cheapest\n *    inflation path (the same visitor re-posting the same entries in one request)\n *    without inventing auth.\n *  - Absent install ids are filled with a request-wide anonymous token, so one\n *    id-less submitter is one contributor per request, not many. The app sends\n *    its real install id as `from: [installId]` (older clients set `installId`);\n *    both spellings are read.\n *  - GET lists every v:* key, groups by entryHash, merges each group into one\n *    canonical entry (votes = capped distinct contributors, verdict = strongest).\n *  - POST puts each contribution (create-if-absent), updates a meta counter, and\n *    is rate-limited per IP with a fixed window.\n *\n * The client sanitizes before it sends; the server sanitizes again because the\n * wire is untrusted. Topic list + verdict ordering are mirrored from the app.\n */
+/**
+ * The live hive endpoint — a tiny anonymous write/read corpus for the fly.
+ *
+ * Runtime model: Cloudflare Workers passes kv_namespace bindings through the
+ * `env` parameter of fetch(request, env, ctx). wrangler's deploy output calls
+ * it `env.KV`, so we read it from `env.KV` rather than expecting a global.
+ *
+ * Design (concurrent-safe without CAS, O(1) read path):
+ *  - Each *contribution* is an immutable record under one KV key:
+ *      v:<entryHash>:<installId>  →  { hash, text, topic, verdict, units, keywords, installId, ts }
+ *    Two visitors teaching the same phrasing share an entryHash but differ in
+ *    installId, so their records never clobber; two clicks from one visitor are
+ *    idempotent (same key, same value).
+ *  - A pre-merged snapshot is cached under `corpus:snapshot` and refreshed on
+ *    every write that adds a new contribution, so GET is a single KV read
+ *    instead of an N+1 key scan. If the snapshot key is absent (first boot or
+ *    TTL expiry), GET rebuilds it with bounded concurrency and caches the result.
+ *  - A POST dedups its own batch first: within one request, one submitter never
+ *    contributes the same (entryHash, installId) twice. This bounds the cheapest
+ *    inflation path (the same visitor re-posting the same entries in one request)
+ *    without inventing auth.
+ *  - Absent install ids are filled with a request-wide anonymous token, so one
+ *    id-less submitter is one contributor per request, not many. The app sends
+ *    its real install id as `from: [installId]` (older clients set `installId`);
+ *    both spellings are read.
+ *  - GET supports `?since=<ISO|ms>` incremental pulls and `If-None-Match` ETag
+ *    conditional requests.
+ *
+ * The client sanitizes before it sends; the server sanitizes again because the
+ * wire is untrusted. Topic list, feature bounds, and verdict ordering are
+ * mirrored from the app.
+ */
 
 const TOPICS = [
   "kinematics",
@@ -19,13 +50,15 @@ type Topic = (typeof TOPICS)[number];
 const VERDICT_ORDER: Record<string, number> = { wrong: 0, right: 1, taught: 2 };
 const VERDICTS = new Set(["wrong", "right", "taught"]);
 
-const corsHeaders = {
+const corsHeaders: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type",
+  "Access-Control-Allow-Headers": "Content-Type, If-None-Match",
+  "Access-Control-Expose-Headers": "ETag",
 };
 
 const KV_PREFIX = "v:";
+const SNAPSHOT_KEY = "corpus:snapshot";
 const META_KEY = "meta";
 const RATE_LIMIT_KEY_PREFIX = "rl:";
 const RATE_LIMIT_WINDOW_SEC = 60;
@@ -36,26 +69,43 @@ const POST_MAX_CONTRIBUTORS = 12;
 const VOTE_CAP = 8;
 const CORPUS_MAX_ENTRIES = 20000;
 const LIST_PAGE_SIZE = 1000;
+const KV_READ_CONCURRENCY = 32;
 
-// ── KV binding (from env, per the new Workers model) ──────────────────
+/** Feature vector bounds mirrored from src/core/features.ts. */
+const N_UNIT_FEATURES = 29;
+const N_KEYWORD_FEATURES = 66;
+const N_INPUT_FEATURES = N_UNIT_FEATURES + N_KEYWORD_FEATURES;
 
-declare const KVNamespace: {
-  get(key: string): Promise<string | null>;
-  put(key: string, value: string, opts?: { expirationTtl?: number }): Promise<void>;
-  list(opts: { prefix?: string; limit?: number; cursor?: string }): Promise<{
-    keys: Array<{ name: string; expiration?: number }>;
+export interface KVNamespace {
+  get(key: string, options?: { type?: "json" | "arrayBuffer" | "stream" }): Promise<string | null>;
+  put(
+    key: string,
+    value: string | ArrayBuffer | Uint8Array | Record<string, unknown>,
+    options?: { expirationTtl?: number; expiration?: number },
+  ): Promise<void>;
+  delete?(key: string): Promise<void>;
+  list(options?: {
+    prefix?: string;
+    limit?: number;
     cursor?: string;
-  }>;
-};
+    start?: string;
+    end?: string;
+  }): Promise<{ keys: Array<{ name: string; expiration?: number }>; cursor?: string }>;
+}
+
+export interface ExecutionContext {
+  waitUntil(promise: Promise<unknown>): void;
+  passThroughOnException(): void;
+}
 
 function kvFromEnv(env: { KV?: KVNamespace }): KVNamespace {
   const kv = env.KV;
-  if (!kv || typeof (kv as KVNamespace).get !== "function") {
+  if (!kv || typeof kv.get !== "function") {
     throw new Error(
       "KV binding not found in env — expected env.KV (a kv_namespace binding named KV in wrangler.jsonc)",
     );
   }
-  return kv as KVNamespace;
+  return kv;
 }
 
 // ── worker entrypoint ──────────────────────────────────────────────────
@@ -64,13 +114,13 @@ export default {
   async fetch(
     request: Request,
     env: Record<string, unknown> & { KV?: KVNamespace },
-    _ctx: ExecutionContext = new ExecutionContext(),
+    _ctx?: ExecutionContext,
   ): Promise<Response> {
     if (request.method === "OPTIONS") {
-      return new Response(null, { headers: corsHeaders });
+      return new Response(null, { status: 204, headers: corsHeaders });
     }
     if (request.method === "GET") {
-      return await handleGet(kvFromEnv(env));
+      return await handleGet(request, kvFromEnv(env));
     }
     if (request.method === "POST") {
       return await handlePost(request, kvFromEnv(env));
@@ -79,15 +129,89 @@ export default {
   },
 };
 
-// ── GET: list + merge the canonical corpus ────────────────────────────
+// ── GET: fast cached snapshot + optional ?since filter ─────────────────
 
-async function handleGet(kv: KVNamespace): Promise<Response> {
+interface SnapshotPayload {
+  version: 1;
+  generatedAt: string;
+  entries: MergedEntry[];
+}
+
+async function handleGet(request: Request, kv: KVNamespace): Promise<Response> {
+  const snapshot = await loadOrRebuildSnapshot(kv);
+  const url = new URL(request.url);
+  const sinceParam = url.searchParams.get("since");
+  const sinceMs = parseSince(sinceParam);
+
+  const entries =
+    sinceMs !== null
+      ? snapshot.entries.filter((e) => (e.updatedAt ?? 0) > sinceMs).map(stripInternalFields)
+      : snapshot.entries.map(stripInternalFields);
+
+  const etag = `"v1-${snapshot.generatedAt}-${entries.length}"`;
+  const ifNoneMatch = request.headers.get("If-None-Match");
+  if (ifNoneMatch && ifNoneMatch === etag) {
+    return new Response(null, {
+      status: 304,
+      headers: {
+        ...corsHeaders,
+        ETag: etag,
+        "Cache-Control": "public, max-age=5, stale-while-revalidate=25",
+      },
+    });
+  }
+
+  return json(
+    {
+      version: 1,
+      generatedAt: snapshot.generatedAt,
+      entries,
+    },
+    200,
+    {
+      ETag: etag,
+      "Cache-Control": "public, max-age=5, stale-while-revalidate=25",
+    },
+  );
+}
+
+function parseSince(raw: string | null): number | null {
+  if (!raw) return null;
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  const asNum = Number(trimmed);
+  if (Number.isFinite(asNum) && asNum > 0) return asNum;
+  const parsed = Date.parse(trimmed);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function stripInternalFields(entry: MergedEntry): Omit<MergedEntry, "updatedAt"> {
+  const { updatedAt: _u, ...rest } = entry;
+  return rest;
+}
+
+async function loadOrRebuildSnapshot(kv: KVNamespace): Promise<SnapshotPayload> {
+  const cached = await kvGet(kv, SNAPSHOT_KEY);
+  if (
+    cached &&
+    cached.version === 1 &&
+    typeof cached.generatedAt === "string" &&
+    Array.isArray(cached.entries)
+  ) {
+    return cached as unknown as SnapshotPayload;
+  }
+  return await rebuildSnapshot(kv);
+}
+
+async function rebuildSnapshot(kv: KVNamespace): Promise<SnapshotPayload> {
   const entries = await mergedCorpus(kv);
-  return json({
+  const snapshot: SnapshotPayload = {
     version: 1,
     generatedAt: new Date().toISOString(),
     entries,
-  });
+  };
+  await kvPut(kv, SNAPSHOT_KEY, JSON.stringify(snapshot));
+  return snapshot;
 }
 
 /** Mutable accumulator for one entry hash while we merge its contributions. */
@@ -99,64 +223,81 @@ interface GroupAcc {
   verdict: string;
   contributors: Set<string>;
   count: number;
+  updatedAt: number;
 }
 
 async function mergedCorpus(kv: KVNamespace): Promise<MergedEntry[]> {
   const groups = new Map<string, GroupAcc>();
 
+  const names: string[] = [];
   let cursor: string | undefined;
   let page: { keys: Array<{ name: string }>; cursor?: string } | null;
   do {
     page = await kv.list({ prefix: KV_PREFIX, limit: LIST_PAGE_SIZE, cursor });
     if (!page) break;
-    for (const { name } of page.keys) {
-      const record = await kvGet(kv, name);
+    for (const { name } of page.keys) names.push(name);
+    cursor = page.cursor;
+  } while (page && page.cursor);
+
+  for (let i = 0; i < names.length; i += KV_READ_CONCURRENCY) {
+    const slice = names.slice(i, i + KV_READ_CONCURRENCY);
+    const records = await Promise.all(slice.map((name) => kvGet(kv, name)));
+    for (const record of records) {
       if (!record) continue;
       const hash =
         typeof record.hash === "string" && record.hash.length > 0
           ? record.hash
-          : (await entryHash(
+          : await entryHash(
               typeof record.text === "string" ? record.text : "",
               typeof record.topic === "string" ? record.topic : "",
-            ));
+            );
       if (typeof hash !== "string" || hash.length === 0) continue;
+      const units = cleanUnits(record.units);
+      const keywords = cleanKeywords(record.keywords);
+      if (units.length === 0 && keywords.length === 0) continue;
+      const ts = typeof record.ts === "number" && Number.isFinite(record.ts) ? record.ts : 0;
       const group = groups.get(hash) ?? {
         text: typeof record.text === "string" ? record.text : "",
         topic: typeof record.topic === "string" ? record.topic : "",
-        units: Array.isArray(record.units) ? record.units : [],
-        keywords: Array.isArray(record.keywords) ? record.keywords : [],
+        units,
+        keywords,
         verdict: typeof record.verdict === "string" ? record.verdict : "wrong",
         contributors: new Set<string>(),
         count: 0,
+        updatedAt: ts,
       };
       if (typeof record.text === "string") group.text = record.text;
       if (typeof record.topic === "string") group.topic = record.topic;
-      if (Array.isArray(record.units)) group.units = record.units;
-      if (Array.isArray(record.keywords)) group.keywords = record.keywords;
+      if (units.length > 0) group.units = units;
+      if (keywords.length > 0) group.keywords = keywords;
       if (
         typeof record.verdict === "string" &&
-        VERDICT_ORDER[group.verdict] < VERDICT_ORDER[record.verdict]
+        (VERDICT_ORDER[group.verdict] ?? -1) < (VERDICT_ORDER[record.verdict] ?? -1)
       ) {
         group.verdict = record.verdict;
       }
-      if (typeof record.installId === "string") group.contributors.add(record.installId);
+      if (typeof record.installId === "string" && record.installId.length > 0) {
+        group.contributors.add(record.installId);
+      }
+      if (ts > group.updatedAt) group.updatedAt = ts;
       group.count++;
       groups.set(hash, group);
     }
-    cursor = page.cursor;
-  } while (page && page.cursor);
+  }
 
   const entries: MergedEntry[] = [];
   for (const group of groups.values()) {
     if (entries.length >= CORPUS_MAX_ENTRIES) break;
+    const distinctCount = group.contributors.size > 0 ? group.contributors.size : group.count;
     entries.push({
       text: group.text,
       topic: group.topic,
       units: group.units,
       keywords: group.keywords,
       verdict: group.verdict,
-      votes: Math.min(group.count, VOTE_CAP),
+      votes: Math.min(Math.max(distinctCount, 1), VOTE_CAP),
       from: [...group.contributors].slice(0, POST_MAX_CONTRIBUTORS).sort(),
+      ...(group.updatedAt > 0 ? { updatedAt: group.updatedAt } : {}),
     });
   }
 
@@ -173,10 +314,7 @@ async function mergedCorpus(kv: KVNamespace): Promise<MergedEntry[]> {
 
 // ── POST: append contributions ────────────────────────────────────────
 
-async function handlePost(
-  request: Request,
-  kv: KVNamespace,
-): Promise<Response> {
+async function handlePost(request: Request, kv: KVNamespace): Promise<Response> {
   const ip = clientIp(request);
   if (!(await checkRateLimit(kv, ip))) {
     return json({ error: "rate limited", detail: "too many requests from this address" }, 429);
@@ -201,70 +339,93 @@ async function handlePost(
   // here, no matter how many entries (or repeats) it sends.
   const fallbackId = absentId();
 
-  // One submitter can repeat the same (entryHash, installId) a few times in a
-  // single request (e.g. a buggy client retrying), but we never write it more
-  // than once per batch — that is the cheapest inflation path and this closes it.
+  // Collapse in-batch duplicates from the same contributor before hitting KV.
   const batch = dedupedBatch(entries, fallbackId);
 
+  const sanitizedList = await Promise.all(batch.map((raw) => sanitizeEntry(raw, fallbackId)));
   const accepted: Array<{ ok: boolean; reason?: string; installId?: string }> = [];
-  for (const raw of batch) {
-    const entry = await sanitizeEntry(raw, fallbackId);
+  const candidates: SanitizedEntry[] = [];
+
+  for (let i = 0; i < batch.length; i++) {
+    const entry = sanitizedList[i];
     if (!entry) {
-      accepted.push({ ok: false, reason: "rejected: " + sanitizeReason(raw) });
+      accepted.push({ ok: false, reason: "rejected: " + sanitizeReason(batch[i]) });
       continue;
     }
-    const key = contributionKey(entry.hash, entry.installId);
-    const existing = await kvGet(kv, key);
-    if (!existing) {
-      await kvPut(kv, key, contributionValue(entry));
-    }
     accepted.push({ ok: true, installId: entry.installId });
+    candidates.push(entry);
   }
 
-  await kvPut(
-    kv,
-    META_KEY,
-    JSON.stringify({ count: Date.now(), generatedAt: new Date().toISOString() }),
-    { expirationTtl: 60 * 60 * 24 * 30 },
-  );
+  let wroteNew = false;
+  for (let i = 0; i < candidates.length; i += KV_READ_CONCURRENCY) {
+    const slice = candidates.slice(i, i + KV_READ_CONCURRENCY);
+    const existingList = await Promise.all(
+      slice.map((entry) => kvGet(kv, contributionKey(entry.hash, entry.installId))),
+    );
+    const writes: Promise<void>[] = [];
+    for (let j = 0; j < slice.length; j++) {
+      const entry = slice[j];
+      const existing = existingList[j];
+      if (!existing) {
+        wroteNew = true;
+        writes.push(kvPut(kv, contributionKey(entry.hash, entry.installId), contributionValue(entry)));
+      } else if (
+        typeof existing.verdict === "string" &&
+        (VERDICT_ORDER[existing.verdict] ?? -1) < (VERDICT_ORDER[entry.verdict] ?? -1)
+      ) {
+        // Upgrade verdict when the same contributor later corrects ("taught") an earlier "right"/"wrong".
+        wroteNew = true;
+        writes.push(kvPut(kv, contributionKey(entry.hash, entry.installId), contributionValue(entry)));
+      }
+    }
+    if (writes.length > 0) await Promise.all(writes);
+  }
 
-  const merged = await mergedCorpus(kv);
+  const snapshot = wroteNew ? await rebuildSnapshot(kv) : await loadOrRebuildSnapshot(kv);
+  if (wroteNew) {
+    await kvPut(
+      kv,
+      META_KEY,
+      JSON.stringify({ count: snapshot.entries.length, generatedAt: snapshot.generatedAt }),
+      { expirationTtl: 60 * 60 * 24 * 30 },
+    );
+  }
+
+  const publicEntries = snapshot.entries.map(stripInternalFields);
   return json({
     ok: true,
     accepted: accepted.filter((a) => a.ok).length,
     rejected: accepted.length - accepted.filter((a) => a.ok).length,
-    corpusEntries: merged.length,
+    corpusEntries: publicEntries.length,
     distinctContributorsInBatch: distinctContributorCount(accepted),
     version: 1,
-    generatedAt: new Date().toISOString(),
-    entries: merged,
+    generatedAt: snapshot.generatedAt,
+    entries: publicEntries,
   });
 }
 
-/** Keep one representative per (text, topic, installId) within the POST batch.
- *
- * The server-side sanitizeEntry already computes a true SHA-256 entry hash, but
- * we need a sync key here before we've validated/sanitized. The preview hash
- * is only used to collapse exact in-batch repeats — a collision here can at
- * worst drop one repeated submission, never create a new one.
+/**
+ * Keep one representative per (text, topic, installId) within the POST batch.
+ * If the same submitter sends both "right" and "taught" for the same phrasing
+ * in one batch, keep the stronger verdict.
  */
 function dedupedBatch(entries: unknown[], fallbackId: string): unknown[] {
-  const seen = new Set<string>();
-  const out: unknown[] = [];
+  const byKey = new Map<string, { raw: unknown; verdictRank: number }>();
   for (const raw of entries) {
     const e = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : null;
     if (!e) continue;
     const installId = contributorIdOf(e, fallbackId);
-    const text =
-      typeof e.text === "string" ? e.text.slice(0, POST_MAX_TEXT).trim() : "";
+    const text = typeof e.text === "string" ? cleanText(e.text) : "";
     const topic =
       typeof e.topic === "string" && TOPICS.includes(e.topic as Topic) ? e.topic : "";
+    const verdictRank = typeof e.verdict === "string" ? (VERDICT_ORDER[e.verdict] ?? -1) : -1;
     const key = `${fnv1aPreview(text + "\0" + topic)}:${installId}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    out.push(raw);
+    const prior = byKey.get(key);
+    if (!prior || verdictRank > prior.verdictRank) {
+      byKey.set(key, { raw, verdictRank });
+    }
   }
-  return out;
+  return [...byKey.values()].map((v) => v.raw);
 }
 
 /** A sync FNV-1a preview of the (text, topic) hash, used only for in-memory batch dedup. */
@@ -290,15 +451,24 @@ function absentId(): string {
  * sends `from: [installId]`), else the request-wide anonymous token.
  */
 function contributorIdOf(e: { installId?: unknown; from?: unknown }, fallbackId: string): string {
-  if (typeof e.installId === "string" && e.installId.length > 0) return e.installId;
+  if (typeof e.installId === "string") {
+    const id = e.installId.trim().slice(0, 64);
+    if (id.length > 0) return id;
+  }
   if (Array.isArray(e.from)) {
-    const first = e.from.find((v): v is string => typeof v === "string" && v.length > 0);
-    if (first) return first;
+    for (const v of e.from) {
+      if (typeof v === "string") {
+        const id = v.trim().slice(0, 64);
+        if (id.length > 0) return id;
+      }
+    }
   }
   return fallbackId;
 }
 
-function distinctContributorCount(accepted: Array<{ ok: boolean; reason?: string; installId?: string }>): number {
+function distinctContributorCount(
+  accepted: Array<{ ok: boolean; reason?: string; installId?: string }>,
+): number {
   const ids = new Set<string>();
   for (const a of accepted) {
     if (!a.ok) continue;
@@ -335,14 +505,13 @@ async function sanitizeEntry(raw: unknown, fallbackId: string): Promise<Sanitize
   const e = raw as RawEntry;
   if (typeof e.text !== "string") return null;
   const text = cleanText(e.text);
-  if (!text) return null;
-  if (text.length > POST_MAX_TEXT) return null;
+  if (!text || text.length > POST_MAX_TEXT) return null;
   if (typeof e.topic !== "string" || !TOPICS.includes(e.topic as Topic)) return null;
   const topic = e.topic as Topic;
   if (typeof e.verdict !== "string" || !VERDICTS.has(e.verdict)) return null;
   const verdict = e.verdict;
-  const units = finiteNumbers(e.units).slice(0, 256);
-  const keywords = finiteNumbers(e.keywords).slice(0, 128);
+  const units = cleanUnits(e.units);
+  const keywords = cleanKeywords(e.keywords);
   if (units.length === 0 && keywords.length === 0) return null;
   const installId = contributorIdOf(e, fallbackId);
   const hash = await entryHash(text, topic);
@@ -358,6 +527,9 @@ function sanitizeReason(raw: unknown): string {
   if (t.length > POST_MAX_TEXT) return "text too long";
   if (typeof e.topic !== "string" || !TOPICS.includes(e.topic as Topic)) return "bad topic";
   if (typeof e.verdict !== "string" || !VERDICTS.has(e.verdict)) return "bad verdict";
+  const units = cleanUnits(e.units);
+  const keywords = cleanKeywords(e.keywords);
+  if (units.length === 0 && keywords.length === 0) return "no valid units or keywords";
   return "rejected";
 }
 
@@ -369,6 +541,41 @@ function cleanText(s: string): string {
     .filter((w) => w.length > 1 && !/^\d*\.?\d*$/.test(w))
     .join(" ");
   return out.slice(0, POST_MAX_TEXT).trim();
+}
+
+/**
+ * Validate sparse unit pairs `[familyIndex, count, ...]`, keeping only
+ * in-range integer indices `[0, N_UNIT_FEATURES)` and positive finite counts.
+ */
+function cleanUnits(raw: unknown): number[] {
+  const nums = finiteNumbers(raw).slice(0, 2 * N_INPUT_FEATURES);
+  const even = nums.length % 2 === 0 ? nums : nums.slice(0, -1);
+  const out: number[] = [];
+  for (let i = 0; i + 1 < even.length; i += 2) {
+    const idx = even[i];
+    const count = even[i + 1];
+    if (Number.isInteger(idx) && idx >= 0 && idx < N_UNIT_FEATURES && count > 0 && count <= 100) {
+      out.push(idx, count);
+    }
+  }
+  return out;
+}
+
+/**
+ * Validate sparse keyword indices, keeping only distinct integers in
+ * `[0, N_KEYWORD_FEATURES)`.
+ */
+function cleanKeywords(raw: unknown): number[] {
+  const nums = finiteNumbers(raw).slice(0, N_INPUT_FEATURES);
+  const seen = new Set<number>();
+  const out: number[] = [];
+  for (const k of nums) {
+    if (Number.isInteger(k) && k >= 0 && k < N_KEYWORD_FEATURES && !seen.has(k)) {
+      seen.add(k);
+      out.push(k);
+    }
+  }
+  return out;
 }
 
 function finiteNumbers(raw: unknown): number[] {
@@ -438,6 +645,7 @@ interface MergedEntry {
   verdict: string;
   votes: number;
   from: string[];
+  updatedAt?: number;
 }
 
 // ── rate limiting (fixed window per IP, stored in KV) ────────────────
@@ -447,17 +655,16 @@ async function checkRateLimit(kv: KVNamespace, ip: string): Promise<boolean> {
   const now = Date.now();
   const windowStart = now - RATE_LIMIT_WINDOW_SEC * 1000;
   const raw = await kvGet(kv, key);
-  const stored =
-    raw && typeof raw === "object" && raw !== null ? (raw as Record<string, unknown>) : null;
-  const count =
+  const stored = raw && typeof raw === "object" ? raw : null;
+  const inWindow =
     stored &&
     typeof stored.count === "number" &&
     typeof stored.when === "number" &&
-    stored.when > windowStart
-      ? stored.count
-      : 0;
+    stored.when > windowStart;
+  const count = inWindow ? (stored.count as number) : 0;
+  const windowAnchor = inWindow ? (stored.when as number) : now;
   if (count >= RATE_LIMIT_MAX) return false;
-  await kvPut(kv, key, JSON.stringify({ count: count + 1, when: now }), {
+  await kvPut(kv, key, JSON.stringify({ count: count + 1, when: windowAnchor }), {
     expirationTtl: RATE_LIMIT_WINDOW_SEC,
   });
   return true;
@@ -471,10 +678,10 @@ function clientIp(request: Request): string {
 
 // ── tiny JSON helper ──────────────────────────────────────────────────
 
-function json(body: unknown, status = 200): Response {
+function json(body: unknown, status = 200, extraHeaders?: Record<string, string>): Response {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { "Content-Type": "application/json", ...corsHeaders },
+    headers: { "Content-Type": "application/json", ...corsHeaders, ...extraHeaders },
   });
 }
 
@@ -488,10 +695,4 @@ function arrayOf(payload: unknown): unknown[] {
     return (payload as { entries: unknown[] }).entries;
   }
   return [];
-}
-
-// minimal ExecutionContext shim for local typecheck; provided by the runtime.
-declare class ExecutionContext {
-  waitUntil(promise: Promise<unknown>): void;
-  passThroughOnException(): void;
 }
